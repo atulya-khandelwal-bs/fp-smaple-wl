@@ -28,7 +28,6 @@ export default function FPCallMessageView({
   title,
   description,
   icons_details,
-  call_details,
   redirection_details,
 }: FPCallMessageViewProps): React.JSX.Element {
   const isVideoCall = callType === "video_call";

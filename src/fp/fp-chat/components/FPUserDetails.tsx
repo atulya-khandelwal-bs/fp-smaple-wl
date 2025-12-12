@@ -15,7 +15,6 @@ export default function FPUserDetails({
   selectedContact,
   userId,
   peerId,
-  onSend,
   addLog,
 }: FPUserDetailsProps): React.JSX.Element {
   const [productCount, setProductCount] = useState<number>(3); // Default to 3 products
