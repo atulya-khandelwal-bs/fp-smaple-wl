@@ -1,7 +1,8 @@
-import { useRef, useEffect, RefObject, KeyboardEvent } from "react";
+import { useEffect, RefObject, KeyboardEvent } from "react";
 import { Smile } from "lucide-react";
 import "emoji-picker-element";
 import { DraftAttachment, Contact } from "../../common/types/chat";
+import React from "react";
 
 interface FPMessageInputProps {
   message: string;
@@ -43,7 +44,7 @@ export default function FPMessageInput({
   inputRef,
   buttonRef,
   emojiPickerRef,
-}: FPMessageInputProps): JSX.Element {
+}: FPMessageInputProps): React.JSX.Element {
   // Handle emoji selection and make navigation bar scrollable
   useEffect(() => {
     if (!showEmojiPicker) return;
@@ -65,7 +66,8 @@ export default function FPMessageInput({
         const customEvent = event as CustomEvent;
         const emoji =
           customEvent.detail?.unicode ||
-          (customEvent.detail as { emoji?: { unicode?: string } })?.emoji?.unicode ||
+          (customEvent.detail as { emoji?: { unicode?: string } })?.emoji
+            ?.unicode ||
           customEvent.detail ||
           (event as { emoji?: string }).emoji ||
           (event as { unicode?: string }).unicode;
@@ -81,7 +83,9 @@ export default function FPMessageInput({
       pickerElement.addEventListener("change", handleEmojiSelect);
 
       // Try to access shadow DOM for navigation styling
-      const shadowRoot = (pickerElement as HTMLElement & { shadowRoot?: ShadowRoot }).shadowRoot;
+      const shadowRoot = (
+        pickerElement as HTMLElement & { shadowRoot?: ShadowRoot }
+      ).shadowRoot;
       if (shadowRoot) {
         // Common selectors for navigation in emoji-picker-element
         const navSelectors = [
@@ -96,14 +100,16 @@ export default function FPMessageInput({
         ];
 
         for (const selector of navSelectors) {
-          const navElement = shadowRoot.querySelector(selector) as HTMLElement | null;
+          const navElement = shadowRoot.querySelector(
+            selector
+          ) as HTMLElement | null;
           if (navElement) {
             navElement.style.overflowX = "auto";
             navElement.style.overflowY = "hidden";
             navElement.style.whiteSpace = "nowrap";
             navElement.style.display = "flex";
             navElement.style.scrollbarWidth = "thin";
-            navElement.style.webkitOverflowScrolling = "touch";
+            (navElement.style as any).webkitOverflowScrolling = "touch";
             break; // Found and styled, exit
           }
         }
@@ -299,4 +305,3 @@ export default function FPMessageInput({
     </div>
   );
 }
-

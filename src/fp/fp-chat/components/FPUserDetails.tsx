@@ -23,6 +23,7 @@ export default function FPUserDetails({
   // All available products for suggestions
   const allProducts: Product[] = [
     {
+      id: "1",
       title: "What's Up Wellness Sleep Gummies",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",
@@ -39,6 +40,7 @@ export default function FPUserDetails({
       },
     },
     {
+      id: "2",
       title: "Hello Healthy Coffee (South Indian)",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",
@@ -55,6 +57,7 @@ export default function FPUserDetails({
       },
     },
     {
+      id: "3",
       title: "Max Protein Bar",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",
@@ -71,6 +74,7 @@ export default function FPUserDetails({
       },
     },
     {
+      id: "4",
       title: "Kikibix 100% Whole Grain Cookies",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",
@@ -87,6 +91,7 @@ export default function FPUserDetails({
       },
     },
     {
+      id: "5",
       title: "Ginger Honey Tonic",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",

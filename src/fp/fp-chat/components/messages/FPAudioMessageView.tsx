@@ -1,4 +1,5 @@
 import { RefObject } from "react";
+import React from "react";
 
 interface FPAudioMessageViewProps {
   audioUrl: string;
@@ -10,7 +11,7 @@ export default function FPAudioMessageView({
   audioUrl,
   audioTranscription,
   currentlyPlayingAudioRef,
-}: FPAudioMessageViewProps): JSX.Element {
+}: FPAudioMessageViewProps): React.JSX.Element {
   return (
     <div
       style={{
@@ -60,4 +61,3 @@ export default function FPAudioMessageView({
     </div>
   );
 }
-
