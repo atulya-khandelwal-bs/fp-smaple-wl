@@ -1,0 +1,84 @@
+// Call-related type definitions
+
+import {
+  ILocalAudioTrack,
+  ILocalVideoTrack,
+  IRemoteUser,
+} from "agora-rtc-react";
+
+export interface BackgroundOption {
+  id: string;
+  name: string;
+  type: "blur" | "image";
+  url?: string;
+}
+
+export interface CallEndData {
+  duration: number;
+  bothUsersConnected: boolean;
+  callStartTime: number | null;
+  callEndTime: number;
+}
+
+export interface FPCallUIProps {
+  // Connection state
+  isConnected: boolean;
+  isStandalone: boolean;
+  calling: boolean;
+  // Media tracks
+  localMicrophoneTrack: ILocalAudioTrack | null;
+  localCameraTrack: ILocalVideoTrack | null;
+  remoteUsers: IRemoteUser[];
+  // Media controls
+  micOn: boolean;
+  setMic: (value: boolean | ((prev: boolean) => boolean)) => void;
+  cameraOn: boolean;
+  setCamera: (value: boolean | ((prev: boolean) => boolean)) => void;
+  speakerOn: boolean;
+  setSpeakerOn: (value: boolean | ((prev: boolean) => boolean)) => void;
+  // Virtual background
+  virtualBackground: boolean;
+  selectedBackground: string | null;
+  showBackgroundOptions: boolean;
+  setShowBackgroundOptions: (value: boolean) => void;
+  useAgoraExtension: boolean;
+  backgroundOptions: BackgroundOption[];
+  toggleVirtualBackground: () => void;
+  handleBackgroundSelect: (background: BackgroundOption) => void;
+  // UI state
+  showMoreOptions: boolean;
+  setShowMoreOptions: (value: boolean | ((prev: boolean) => boolean)) => void;
+  controlsVisible: boolean;
+  setControlsVisible: (value: boolean) => void;
+  mainUserId: number | null;
+  setMainUserId: (value: number | null) => void;
+  // Refs
+  videoContainerRef: React.RefObject<HTMLDivElement | null>;
+  hideControlsTimerRef: React.RefObject<NodeJS.Timeout | null>;
+  // Standalone mode props
+  appId: string;
+  setAppId: (value: string) => void;
+  channel: string;
+  setChannel: (value: string) => void;
+  uid: string | number;
+  setUid: (value: string | number) => void;
+  token: string;
+  setToken: (value: string) => void;
+  generatingToken: boolean;
+  generateToken: () => Promise<string | null>;
+  handleJoinCall: () => Promise<void>;
+  // Other props
+  isAudioCall: boolean;
+  onEndCall: (data?: CallEndData) => void;
+  peerPresenceStatus?: "offline" | "waiting" | "in_call" | null;
+}
+
+export interface FPVideoCallingProps {
+  userId: string;
+  peerId: string;
+  channel: string;
+  isInitiator: boolean;
+  onEndCall: (data?: CallEndData) => void;
+  isAudioCall?: boolean;
+  peerPresenceStatus?: "offline" | "waiting" | "in_call" | null;
+}

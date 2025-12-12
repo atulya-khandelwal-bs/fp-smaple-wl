@@ -1,0 +1,3352 @@
+import React, { useState, useEffect, useRef } from "react";
+import axios from "axios";
+import config from "../../common/config.ts";
+import FPChatHeader from "./FPChatHeader";
+import FPChatTab from "./FPChatTab";
+import FPInfoTab from "./FPInfoTab";
+import FPDescriptionTab from "./FPDescriptionTab";
+import type { Connection } from "agora-chat";
+import FPMessageInput from "./FPMessageInput";
+import FPDraftAttachmentPreview from "./FPDraftAttachmentPreview";
+import FPMediaPopup from "./FPMediaPopup";
+import FPAudioRecordingOverlay from "./FPAudioRecordingOverlay";
+import FPCameraCaptureOverlay from "./FPCameraCaptureOverlay";
+import FPImageViewer from "./FPImageViewer";
+import {
+  formatMessage,
+  convertApiMessageToFormat,
+  parseSystemPayload,
+  getSystemLabel,
+} from "../utils/messageFormatters.ts";
+
+// Import types from messageFormatters
+interface AgoraMessage {
+  id?: string;
+  from?: string;
+  to?: string;
+  time?: number;
+  type?: string;
+  msg?: string;
+  msgContent?: string;
+  data?: string;
+  body?: string | object;
+  customExts?: object;
+  "v2:customExts"?: object;
+  ext?: {
+    type?: string;
+    url?: string;
+    fileName?: string;
+    mimeType?: string;
+    size?: number | string;
+    duration?: number | string;
+    transcription?: string;
+    data?: string | object;
+    [key: string]: unknown;
+  };
+  sender_photo?: string;
+  createdAt?: number | Date;
+  [key: string]: unknown;
+}
+
+interface ApiMessage {
+  message_id?: string;
+  conversation_id?: string;
+  from_user?: string;
+  to_user?: string;
+  sender_name?: string;
+  sender_photo?: string;
+  message_type?: string;
+  body?: string | object;
+  created_at?: string | number;
+  created_at_ms?: number;
+  chat_type?: string;
+}
+import {
+  Message,
+  Contact,
+  DraftAttachment,
+  CoachInfo,
+  LogEntry,
+  SystemMessageData,
+} from "../../common/types/chat";
+
+interface FPChatInterfaceProps {
+  userId: string;
+  peerId: string | null;
+  setPeerId: (id: string | null) => void;
+  message: string;
+  setMessage: (msg: string | ((prev: string) => string)) => void;
+  onSend: (msg: string | object) => void;
+  onLogout?: () => void;
+  logs: (string | LogEntry)[];
+  selectedContact: Contact | null;
+  chatClient: unknown;
+  onBackToConversations?: (() => void) | null;
+  onInitiateCall?: ((callType: "video" | "audio") => void) | null;
+  onUpdateLastMessageFromHistory?: (peerId: string, message: Message) => void;
+  coachInfo?: CoachInfo;
+}
+
+export default function FPChatInterface({
+  userId,
+  peerId,
+  setPeerId: _setPeerId,
+  message,
+  setMessage,
+  onSend,
+  onLogout: _onLogout,
+  logs,
+  selectedContact,
+  chatClient,
+  onBackToConversations,
+  onInitiateCall,
+  onUpdateLastMessageFromHistory,
+  coachInfo = { name: "", profilePhoto: "" },
+}: FPChatInterfaceProps): React.JSX.Element {
+  const [activeTab, setActiveTab] = useState<"Chat" | "Info" | "Description">(
+    "Chat"
+  );
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [showMediaPopup, setShowMediaPopup] = useState<boolean>(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
+  const [showDemoMenu, setShowDemoMenu] = useState<boolean>(false);
+  const [_selectedMedia, setSelectedMedia] = useState<File | null>(null);
+  const [showCameraCapture, setShowCameraCapture] = useState<boolean>(false);
+  const [cursor, setCursor] = useState<string | number | null>(null);
+  const [isFetchingHistory, setIsFetchingHistory] = useState<boolean>(false);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const [imageViewerUrl, setImageViewerUrl] = useState<string>("");
+  const [imageViewerAlt, setImageViewerAlt] = useState<string>("");
+  const chatAreaRef = useRef<HTMLDivElement>(null);
+  const mediaPopupRef = useRef<HTMLDivElement>(null);
+  const demoMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recordingDuration, setRecordingDuration] = useState<number>(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const recordingStartTimeRef = useRef<number | null>(null); // Track when recording started
+  const recordingDurationRef = useRef<number>(0); // Track duration in a ref for accurate reading
+  const shouldSendRecordingRef = useRef<boolean>(true);
+  const [inputResetKey, setInputResetKey] = useState<number>(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const prevMessageRef = useRef<string>("");
+  const currentlyPlayingAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const chatClientRef = useRef<unknown>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const audioBtnRef = useRef<HTMLButtonElement>(null);
+  const fetchedPeersRef = useRef<{
+    fetchedPeers: Set<string>;
+    currentPeer: string | null;
+  }>({
+    fetchedPeers: new Set(), // Track which peers we've already fetched history for
+    currentPeer: null, // Track the current peer to detect changes
+  });
+  const isLoadingHistoryRef = useRef<boolean>(false);
+  const skipAutoScrollRef = useRef<boolean>(false);
+
+  const toggleEmojiPicker = (): void => {
+    setShowEmojiPicker((prev) => !prev);
+  };
+
+  // Helper: label for day headers (Today / Yesterday / formatted date)
+  const formatDateLabel = (date: Date): string => {
+    const now = new Date();
+    const startOfDay = (d: Date): Date =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dayMs = 24 * 60 * 60 * 1000;
+    const diffDays = Math.floor(
+      (startOfDay(now).getTime() - startOfDay(date).getTime()) / dayMs
+    );
+
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    return date.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    });
+  };
+
+  // Currency formatter (INR by default to match the sample UI)
+  const formatCurrency = (
+    value: number | null | undefined,
+    currency = "INR",
+    locale = "en-IN"
+  ): string => {
+    if (value == null || isNaN(value)) return "";
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 0,
+      }).format(value);
+    } catch {
+      const prefix = currency === "INR" ? "₹" : "";
+      return `${prefix}${Math.round(Number(value))}`;
+    }
+  };
+
+  // parseSystemPayload is now imported from utils
+
+  // Detect draft attachment from the current input message (JSON with type and url)
+  // Note: audio messages are not shown as draft attachments, they are sent immediately
+  const parseDraftAttachment = (
+    raw: string | null | undefined
+  ): DraftAttachment | null => {
+    if (!raw || typeof raw !== "string" || raw.trim() === "") return null;
+    try {
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== "object" || !obj.type) return null;
+      const t = String(obj.type).toLowerCase();
+      // Show draft for image, file, and audio
+      if ((t === "image" || t === "file" || t === "audio") && obj.url) {
+        return {
+          type: t as "image" | "file" | "audio",
+          url: obj.url,
+          fileName: obj.fileName || "attachment",
+          mimeType:
+            obj.mimeType ||
+            (t === "image"
+              ? "image/*"
+              : t === "audio"
+              ? "audio/*"
+              : "application/octet-stream"),
+          size: obj.size ?? undefined,
+          duration: obj.duration ?? undefined,
+          // Include duration for audio
+        };
+      }
+    } catch {}
+    return null;
+  };
+
+  const draftAttachment = parseDraftAttachment(message);
+
+  const clearDraftAttachment = (): void => {
+    try {
+      const att = parseDraftAttachment(message);
+      if (att && typeof att.url === "string" && att.url.startsWith("blob:")) {
+        URL.revokeObjectURL(att.url);
+      }
+    } catch {}
+    setSelectedMedia(null);
+    setMessage("");
+  };
+
+  const getDraftCaption = (): string => {
+    if (!draftAttachment) return "";
+    // For audio, don't show caption in input - the preview handles it
+    if (draftAttachment.type === "audio") {
+      return "";
+    }
+    try {
+      const obj = JSON.parse(message);
+      return obj.caption || obj.body || "";
+    } catch {
+      return "";
+    }
+  };
+
+  // getSystemLabel is now imported from utils
+
+  useEffect(() => {
+    const chatArea = chatAreaRef.current;
+    if (!chatArea) return;
+
+    const handleScroll = () => {
+      if (chatArea.scrollTop === 0 && !isFetchingHistory && hasMore) {
+        fetchMoreMessages();
+      }
+    };
+
+    chatArea.addEventListener("scroll", handleScroll);
+    return () => chatArea.removeEventListener("scroll", handleScroll);
+  }, [peerId, isFetchingHistory, hasMore, cursor]);
+
+  // Auto-scroll to bottom when new messages arrive
+  const scrollToBottom = (): void => {
+    if (chatAreaRef.current) {
+      chatAreaRef.current.scrollTop = chatAreaRef.current.scrollHeight;
+    }
+  };
+
+  // Convert logs to message format
+  useEffect(() => {
+    if (!peerId) {
+      setMessages([]);
+      return;
+    }
+
+    // Create a simple hash function for log content
+    const hashLog = (log: string): number => {
+      let hash = 0;
+      for (let i = 0; i < log.length; i++) {
+        const char = log.charCodeAt(i);
+        hash = (hash << 5) - hash + char;
+        hash = hash & hash; // Convert to 32bit integer
+      }
+      return Math.abs(hash);
+    };
+
+    // Find the index of each log entry and create a unique identifier
+    // Handle both old format (string) and new format (object with log and timestamp)
+    const logEntries = logs.map((logEntry, logIndex) => {
+      const log = typeof logEntry === "string" ? logEntry : logEntry.log;
+      // For log entries that are strings, we can't determine the actual timestamp
+      // They will be replaced by server messages when history is fetched
+      // For now, use current time but this will be corrected when messages are fetched from server
+      const timestamp =
+        typeof logEntry === "string"
+          ? new Date() // Will be replaced by server timestamp when history is fetched
+          : logEntry.timestamp || new Date();
+      return {
+        log,
+        timestamp,
+        logIndex,
+        logHash: log ? hashLog(log) : 0, // Create hash of entire log for stable ID
+      };
+    });
+
+    const filteredLogs = logEntries.filter((entry) => {
+      const { log } = entry;
+      if (!log) return false;
+      // Filter messages for the current conversation
+      if (log.includes("→")) {
+        // Outgoing message: "You → peerId: message"
+        const match = log.match(/You → ([^:]+):/);
+        return match && match[1].trim() === peerId;
+      } else if (log.includes(":")) {
+        // Incoming message: "senderId: message"
+        const parts = log.split(":");
+        const senderId = parts[0].trim();
+        // Only show messages from the current peer
+        return senderId === peerId;
+      }
+      return false;
+    });
+
+    const newMessages = filteredLogs
+      .map(({ log, logHash, logIndex, timestamp }) => {
+        if (!log) return null;
+        const isOutgoing = log.includes("→");
+        const messageTime =
+          timestamp instanceof Date ? timestamp : new Date(timestamp);
+        // Create a unique timestamp to ensure consecutive duplicate messages have different IDs
+        // Use logHash + logIndex for stable IDs that don't change across re-renders
+        // This ensures the same log entry always gets the same ID
+        const uniqueTimestamp = logHash + logIndex;
+
+        if (isOutgoing) {
+          // Parse "You → peerId: message"
+          // Updated regex to handle JSON strings that may contain colons
+          const match = log.match(/You → [^:]+: (.+)$/);
+          let content = match ? match[1].trim() : "";
+
+          // If content looks like JSON (starts with {), try to parse it
+          if (content.startsWith("{")) {
+            // Content is already the JSON string, use it as-is
+          } else {
+            // Fallback: try to extract everything after the first colon
+            const colonIndex = log.indexOf(": ");
+            if (colonIndex !== -1) {
+              content = log.substring(colonIndex + 2).trim();
+            }
+          }
+
+          // Parse special message formats (IMAGE_DATA, FILE_DATA, or backend JSON)
+          let messageContent = content;
+          let messageType = "text";
+          let imageData = null;
+          let fileName = null;
+          let fileSize = null;
+          let imageUrl = null;
+          let audioUrl = null;
+          let audioDurationMs = null;
+          let audioTranscription = null;
+          let fileUrl = null;
+          let fileMime = null;
+          let fileSizeBytes = null;
+          let products = null;
+          let callType: string | undefined = undefined;
+          let callDurationSeconds: number | undefined = undefined;
+          let callChannel: string | undefined = undefined;
+          let system = null;
+
+          if (content.startsWith("IMAGE_DATA:")) {
+            const imageParts = content.split(":");
+            if (imageParts.length >= 3) {
+              imageData = imageParts[1];
+              fileName = imageParts.slice(2).join(":");
+              messageType = "image";
+              messageContent = fileName;
+            }
+          } else if (content.startsWith("FILE_DATA:")) {
+            const fileParts = content.split(":");
+            if (fileParts.length >= 4) {
+              imageData = fileParts[1];
+              fileName = fileParts[2];
+              fileSize = fileParts[3];
+              messageType = "file";
+              messageContent = `📎 ${fileName} (${fileSize} KB)`;
+            }
+          } else {
+            // Try backend JSON payloads → else system → else text
+            try {
+              const obj = JSON.parse(content);
+
+              if (obj && typeof obj === "object" && obj.type) {
+                const t = String(obj.type).toLowerCase();
+                // skip system messages coming from logs to avoid duplicates
+                // ---- IGNORE HEALTH COACH CHANGED MESSAGES ----
+                if (t === "mealPlanUpdate" || t === "healthCoachChanged") {
+                  return null; // <-- This ensures UI never displays it
+                }
+
+                switch (t) {
+                  case "text":
+                    messageType = "text";
+                    messageContent = obj.body ?? "";
+                    break;
+                  case "image":
+                    messageType = "image";
+                    imageUrl = obj.url ?? null;
+                    messageContent = obj.url ?? "Image";
+                    fileName = obj.fileName ?? null;
+                    break;
+                  case "audio":
+                    messageType = "audio";
+                    audioUrl = obj.url ?? null;
+                    audioDurationMs = obj.duration ?? null;
+                    audioTranscription = obj.transcription ?? null;
+                    messageContent = "Audio message";
+                    break;
+                  case "file":
+                    messageType = "file";
+                    fileUrl = obj.url ?? null;
+                    fileMime = obj.mimeType ?? null;
+                    fileSizeBytes = obj.size ?? null;
+                    try {
+                      const urlObj = new URL(obj.url);
+                      fileName = decodeURIComponent(
+                        urlObj.pathname.split("/").pop() || "file"
+                      );
+                    } catch {
+                      fileName = obj.fileName || obj.url || "file";
+                    }
+                    messageContent = `📎 ${fileName}`;
+                    break;
+                  case "products":
+                  case "recommended_products":
+                    messageType = "products";
+                    // Handle both 'products' and 'product_list' fields
+                    if (Array.isArray(obj.products)) {
+                      products = obj.products;
+                      console.log(
+                        "✅ [Outgoing] Extracted products from obj.products:",
+                        products.length
+                      );
+                    } else if (Array.isArray(obj.product_list)) {
+                      products = obj.product_list;
+                      console.log(
+                        "✅ [Outgoing] Extracted products from obj.product_list:",
+                        products.length
+                      );
+                    } else {
+                      products = [];
+                      console.warn(
+                        "⚠️ [Outgoing] No products array found. obj:",
+                        obj
+                      );
+                    }
+                    messageContent = "Products";
+                    break;
+                  case "new_nutritionist":
+                  case "new_nutrionist":
+                  case "coach_assigned":
+                  case "coach_details":
+                    messageType = "system";
+                    // Extract data from payload structure for coach_assigned/coach_details
+                    // Use the values directly from obj to preserve what was sent
+                    const name = obj.name || obj.title || "";
+                    const extractedTitle = obj.title || obj.description || "";
+                    const profilePhoto =
+                      obj.profilePhoto || obj.icons_details?.left_icon || "";
+
+                    // Debug: Log the parsed object to see what fields are available
+                    console.log(
+                      "🔍 [FPChatInterface] Parsed obj for coach message:",
+                      obj
+                    );
+
+                    // Determine action_type - prioritize obj.action_type, then obj.type
+                    const actionType =
+                      obj.action_type ||
+                      (obj.type === "coach_assigned"
+                        ? "coach_assigned"
+                        : obj.type === "coach_details"
+                        ? "coach_details"
+                        : undefined);
+
+                    // Clean up icons_details - replace "image_url" placeholder with empty string
+                    let cleanedIconsDetails = obj.icons_details;
+                    if (
+                      cleanedIconsDetails &&
+                      typeof cleanedIconsDetails === "object"
+                    ) {
+                      cleanedIconsDetails = {
+                        left_icon:
+                          cleanedIconsDetails.left_icon === "image_url"
+                            ? ""
+                            : cleanedIconsDetails.left_icon || "",
+                        right_icon:
+                          cleanedIconsDetails.right_icon === "image_url"
+                            ? ""
+                            : cleanedIconsDetails.right_icon || "",
+                      };
+                    }
+
+                    // Clean up profilePhoto - replace "image_url" placeholder with empty string
+                    const cleanedProfilePhoto =
+                      profilePhoto === "image_url" ? "" : profilePhoto;
+
+                    system = {
+                      kind: "new_nutritionist",
+                      id: obj.id || "",
+                      name: name,
+                      title: extractedTitle,
+                      profilePhoto: cleanedProfilePhoto,
+                      payload: {
+                        // Always include action_type
+                        action_type: actionType,
+                        // Preserve title from obj (can be empty string for coach_assigned)
+                        title:
+                          obj.title !== undefined ? obj.title : extractedTitle,
+                        // Preserve description from obj (can be empty string for coach_assigned)
+                        description:
+                          obj.description !== undefined ? obj.description : "",
+                        // Use cleaned icons_details (replace "image_url" with empty string)
+                        icons_details: cleanedIconsDetails || undefined,
+                        // Preserve redirection_details array
+                        redirection_details:
+                          obj.redirection_details || undefined,
+                      },
+                    };
+
+                    // Debug: Log the constructed payload
+                    console.log(
+                      "🔍 [FPChatInterface] Constructed payload:",
+                      system.payload
+                    );
+                    messageContent =
+                      name || extractedTitle || "New nutritionist assigned";
+                    break;
+                  case "meal_plan_updated":
+                  case "meal_plan_update":
+                    messageType = "system";
+                    system = {
+                      kind: "meal_plan_updated",
+                      payload: {
+                        action_type: obj.action_type,
+                        title: obj.title,
+                        description: obj.description,
+                        icons_details: obj.icons_details,
+                        redirection_details: obj.redirection_details,
+                      },
+                    };
+                    messageContent = obj.title || "Meal plan updated";
+                    break;
+                  case "general_notification":
+                  case "general-notification":
+                    messageType = "general_notification";
+                    system = {
+                      kind: "general_notification",
+                      payload: {
+                        action_type: obj.action_type,
+                        title: obj.title,
+                        description: obj.description,
+                        redirection_details: obj.redirection_details,
+                      },
+                    };
+                    messageContent =
+                      obj.title || obj.description || "Notification";
+                    break;
+                  case "video_call":
+                  case "voice_call":
+                    messageType =
+                      obj.type === "video_call" ? "video_call" : "voice_call";
+                    system = {
+                      kind:
+                        obj.type === "video_call" ? "video_call" : "voice_call",
+                      payload: {
+                        title: obj.title,
+                        description: obj.description,
+                        icons_details: obj.icons_details,
+                        call_details: obj.call_details,
+                        redirection_details: obj.redirection_details,
+                      },
+                    };
+                    messageContent =
+                      obj.title ||
+                      obj.description ||
+                      (obj.type === "video_call" ? "Video call" : "Voice call");
+                    break;
+                  case "documents":
+                    messageType = "documents";
+                    system = {
+                      kind: "documents",
+                      payload: {
+                        title: obj.title,
+                        description: obj.description,
+                        icons_details: obj.icons_details,
+                        documents_details: obj.documents_details,
+                        redirection_details: obj.redirection_details,
+                      },
+                    };
+                    messageContent = obj.title || obj.description || "Document";
+                    // Also set file properties for compatibility with FPFileMessageView
+                    fileUrl = obj.documents_details?.document_url || null;
+                    fileName = obj.title || null;
+                    fileMime = obj.documents_details?.document_type || null;
+                    fileSizeBytes =
+                      obj.documents_details?.document_size || null;
+                    break;
+                  case "call":
+                    // Convert old "call" format to new format
+                    const oldCallType = obj.callType as
+                      | "video"
+                      | "audio"
+                      | undefined;
+                    messageType =
+                      oldCallType === "audio" ? "voice_call" : "video_call";
+                    const callTitle =
+                      oldCallType === "video" ? "Video call" : "Voice call";
+                    let callDescription: string | undefined;
+                    if (obj.duration != null) {
+                      const minutes = Math.floor(obj.duration / 60);
+                      const seconds = obj.duration % 60;
+                      callDescription = `${minutes}:${String(seconds).padStart(
+                        2,
+                        "0"
+                      )}`;
+                    }
+                    system = {
+                      kind:
+                        oldCallType === "audio" ? "voice_call" : "video_call",
+                      payload: {
+                        title: callTitle,
+                        description: callDescription,
+                        call_details: obj.channel
+                          ? { call_url: obj.channel }
+                          : undefined,
+                      },
+                    };
+                    messageContent = callDescription
+                      ? `${callTitle} - ${callDescription}`
+                      : callTitle;
+                    break;
+                  default: {
+                    const parsed = parseSystemPayload(content);
+                    if (parsed) {
+                      if (
+                        parsed.kind === "new_nutritionist" &&
+                        parsed.payload
+                      ) {
+                        // Extract nutritionist data from payload
+                        system = {
+                          kind: "new_nutritionist",
+                          id: parsed.payload.id || "",
+                          name: parsed.payload.name || "",
+                          title: parsed.payload.title || "",
+                          profilePhoto: parsed.payload.profilePhoto || "",
+                        };
+                      } else {
+                        system = parsed;
+                      }
+                      messageType = "system";
+                      const systemData: SystemMessageData = {
+                        kind: parsed.kind,
+                        ...parsed.payload,
+                      };
+                      messageContent = getSystemLabel(systemData);
+                    }
+                  }
+                }
+              }
+            } catch {
+              // not JSON -> keep as text
+            }
+          }
+
+          // Filter out hidden call messages (only one user joined)
+          if (messageType === "hidden") {
+            return null;
+          }
+
+          const generatedId = `outgoing-${peerId}-${logHash}-${logIndex}-${uniqueTimestamp}`;
+
+          // Console log for video call message ID from logs
+
+          // Ensure products is always an array when messageType is products
+          const finalProducts =
+            messageType === "products"
+              ? Array.isArray(products)
+                ? products
+                : []
+              : products;
+
+          return {
+            id: generatedId, // Include logIndex and timestamp to ensure unique IDs for consecutive duplicate messages
+            sender: "You",
+            content: messageContent,
+            imageData: imageData ?? undefined,
+            imageUrl,
+            fileName,
+            fileSize: fileSize ?? undefined,
+            messageType,
+            system: system ? (system as SystemMessageData) : undefined,
+            audioUrl,
+            audioDurationMs,
+            audioTranscription,
+            fileUrl,
+            fileMime,
+            fileSizeBytes,
+            products: finalProducts,
+            callType,
+            callDurationSeconds,
+            channel: callChannel,
+            createdAt: messageTime,
+            timestamp: messageTime.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            isIncoming: false, // Outgoing message - right side
+            avatar: coachInfo?.profilePhoto || config.defaults.userAvatar,
+            peerId, // Store peerId for conversation tracking
+          };
+        } else {
+          // Parse "senderId: message"
+          const parts = log.split(":");
+          const sender = parts[0].trim();
+          const content = parts.slice(1).join(":").trim();
+
+          // Parse special message formats (IMAGE_DATA, FILE_DATA) or backend JSON payloads
+          let messageContent = content;
+          let messageType = "text";
+          let imageData = null;
+          let fileName = null;
+          let fileSize = null;
+          let imageUrl = null;
+          let audioUrl = null;
+          let audioDurationMs = null;
+          let audioTranscription = null;
+          let fileUrl = null;
+          let fileMime = null;
+          let fileSizeBytes = null;
+          let products = null;
+          let callType: string | undefined = undefined;
+          let callDurationSeconds: number | undefined = undefined;
+          let callChannel: string | undefined = undefined;
+          let system = null;
+
+          if (content.startsWith("IMAGE_DATA:")) {
+            const imageParts = content.split(":");
+            if (imageParts.length >= 3) {
+              imageData = imageParts[1];
+              fileName = imageParts.slice(2).join(":");
+              messageType = "image";
+              messageContent = fileName;
+            }
+          } else if (content.startsWith("FILE_DATA:")) {
+            const fileParts = content.split(":");
+            if (fileParts.length >= 4) {
+              imageData = fileParts[1];
+              fileName = fileParts[2];
+              fileSize = fileParts[3];
+              messageType = "file";
+              messageContent = `📎 ${fileName} (${fileSize} KB)`;
+            }
+          } else {
+            // Try backend JSON payloads → else system → else text
+            try {
+              const obj = JSON.parse(content);
+
+              if (obj && typeof obj === "object" && obj.type) {
+                const t = String(obj.type).toLowerCase();
+                // skip system messages coming from logs to avoid duplicates
+                // ---- IGNORE HEALTH COACH CHANGED MESSAGES ----
+                if (t === "mealPlanUpdate" || t === "healthCoachChanged") {
+                  return null; // <-- This ensures UI never displays it
+                }
+
+                switch (t) {
+                  case "text":
+                    messageType = "text";
+                    messageContent = obj.body ?? "";
+                    break;
+                  case "image":
+                    messageType = "image";
+                    imageUrl = obj.url ?? null;
+                    messageContent = obj.url ?? "Image";
+                    break;
+                  case "audio":
+                    messageType = "audio";
+                    audioUrl = obj.url ?? null;
+                    audioDurationMs = obj.duration ?? null;
+                    audioTranscription = obj.transcription ?? null;
+                    messageContent = "Audio message";
+                    break;
+                  case "file":
+                    messageType = "file";
+                    fileUrl = obj.url ?? null;
+                    fileMime = obj.mimeType ?? null;
+                    fileSizeBytes = obj.size ?? null;
+                    try {
+                      const urlObj = new URL(obj.url);
+                      fileName = decodeURIComponent(
+                        urlObj.pathname.split("/").pop() || "file"
+                      );
+                    } catch {
+                      fileName = obj.url ?? "file";
+                    }
+                    messageContent = `📎 ${fileName}`;
+                    break;
+                  case "products":
+                  case "recommended_products":
+                    messageType = "products";
+                    // Handle both 'products' and 'product_list' fields
+                    if (Array.isArray(obj.products)) {
+                      products = obj.products;
+                    } else if (Array.isArray(obj.product_list)) {
+                      products = obj.product_list;
+                    } else {
+                      products = [];
+                    }
+                    messageContent = "Products";
+                    break;
+                  case "general_notification":
+                  case "general-notification":
+                    messageType = "general_notification";
+                    try {
+                      const parsed = JSON.parse(content);
+                      if (parsed && typeof parsed === "object") {
+                        system = {
+                          kind: "general_notification",
+                          payload: {
+                            action_type: parsed.action_type,
+                            title: parsed.title,
+                            description: parsed.description,
+                            redirection_details: parsed.redirection_details,
+                          },
+                        };
+                        messageContent =
+                          parsed.title || parsed.description || "Notification";
+                      }
+                    } catch {
+                      // If parsing fails, try parseSystemPayload
+                      const parsed = parseSystemPayload(content);
+                      if (parsed && parsed.kind === "general_notification") {
+                        system = parsed;
+                        messageContent =
+                          parsed.payload?.title ||
+                          parsed.payload?.description ||
+                          "Notification";
+                      }
+                    }
+                    break;
+                  case "call":
+                    // Convert old "call" format to new format
+                    const oldCallType2 = obj.callType as
+                      | "video"
+                      | "audio"
+                      | undefined;
+                    messageType =
+                      oldCallType2 === "audio" ? "voice_call" : "video_call";
+                    const callTitle2 =
+                      oldCallType2 === "video" ? "Video call" : "Voice call";
+                    let callDescription2: string | undefined;
+                    if (obj.duration != null) {
+                      const minutes = Math.floor(obj.duration / 60);
+                      const seconds = obj.duration % 60;
+                      callDescription2 = `${minutes}:${String(seconds).padStart(
+                        2,
+                        "0"
+                      )}`;
+                    }
+                    system = {
+                      kind:
+                        oldCallType2 === "audio" ? "voice_call" : "video_call",
+                      payload: {
+                        title: callTitle2,
+                        description: callDescription2,
+                        call_details: obj.channel
+                          ? { call_url: obj.channel }
+                          : undefined,
+                      },
+                    };
+                    messageContent = callDescription2
+                      ? `${callTitle2} - ${callDescription2}`
+                      : callTitle2;
+                    break;
+                  case "video_call":
+                  case "voice_call":
+                    messageType =
+                      obj.type === "video_call" ? "video_call" : "voice_call";
+                    try {
+                      const parsed = JSON.parse(content);
+                      if (parsed && typeof parsed === "object") {
+                        system = {
+                          kind:
+                            parsed.type === "video_call"
+                              ? "video_call"
+                              : "voice_call",
+                          payload: {
+                            title: parsed.title,
+                            description: parsed.description,
+                            icons_details: parsed.icons_details,
+                            call_details: parsed.call_details,
+                            redirection_details: parsed.redirection_details,
+                          },
+                        };
+                        messageContent =
+                          parsed.title ||
+                          parsed.description ||
+                          (parsed.type === "video_call"
+                            ? "Video call"
+                            : "Voice call");
+                      }
+                    } catch {
+                      // If parsing fails, try parseSystemPayload
+                      const parsed = parseSystemPayload(content);
+                      if (
+                        parsed &&
+                        (parsed.kind === "video_call" ||
+                          parsed.kind === "voice_call")
+                      ) {
+                        system = parsed;
+                        messageContent =
+                          parsed.payload?.title ||
+                          parsed.payload?.description ||
+                          (parsed.kind === "video_call"
+                            ? "Video call"
+                            : "Voice call");
+                      }
+                    }
+                    break;
+                  case "documents":
+                    messageType = "documents";
+                    try {
+                      const parsed = JSON.parse(content);
+                      if (parsed && typeof parsed === "object") {
+                        system = {
+                          kind: "documents",
+                          payload: {
+                            title: parsed.title,
+                            description: parsed.description,
+                            icons_details: parsed.icons_details,
+                            documents_details: parsed.documents_details,
+                            redirection_details: parsed.redirection_details,
+                          },
+                        };
+                        messageContent =
+                          parsed.title || parsed.description || "Document";
+                        // Also set file properties for compatibility with FPFileMessageView
+                        fileUrl =
+                          parsed.documents_details?.document_url || null;
+                        fileName = parsed.title || null;
+                        fileMime =
+                          parsed.documents_details?.document_type || null;
+                        fileSizeBytes =
+                          parsed.documents_details?.document_size || null;
+                      }
+                    } catch {
+                      // If parsing fails, try parseSystemPayload
+                      const parsed = parseSystemPayload(content);
+                      if (parsed && parsed.kind === "documents") {
+                        system = parsed;
+                        messageContent =
+                          parsed.payload?.title ||
+                          parsed.payload?.description ||
+                          "Document";
+                        const documentsDetails = parsed.payload
+                          ?.documents_details as
+                          | {
+                              document_url?: string;
+                              document_size?: number;
+                              document_type?: string;
+                            }
+                          | undefined;
+                        fileUrl = documentsDetails?.document_url || null;
+                        fileName = parsed.payload?.title || null;
+                        fileMime = documentsDetails?.document_type || null;
+                        fileSizeBytes = documentsDetails?.document_size || null;
+                      }
+                    }
+                    break;
+                  default: {
+                    const parsed = parseSystemPayload(content);
+                    if (parsed) {
+                      if (parsed.kind === "general_notification") {
+                        // Handle general_notification as a regular message type
+                        messageType = "general_notification";
+                        system = parsed;
+                        messageContent =
+                          parsed.payload?.title ||
+                          parsed.payload?.description ||
+                          "Notification";
+                      } else if (
+                        parsed.kind === "video_call" ||
+                        parsed.kind === "voice_call"
+                      ) {
+                        // Handle video_call and voice_call as regular message types
+                        messageType = parsed.kind;
+                        system = parsed;
+                        messageContent =
+                          parsed.payload?.title ||
+                          parsed.payload?.description ||
+                          (parsed.kind === "video_call"
+                            ? "Video call"
+                            : "Voice call");
+                      } else if (
+                        parsed.kind === "new_nutritionist" &&
+                        parsed.payload
+                      ) {
+                        // Extract nutritionist data from payload
+                        // Handle both new_nutritionist format and coach_assigned/coach_details format
+                        const payload = parsed.payload as {
+                          id?: string;
+                          name?: string;
+                          title?: string;
+                          profilePhoto?: string;
+                          description?: string;
+                          icons_details?: {
+                            left_icon?: string;
+                            right_icon?: string;
+                          };
+                          action_type?: string;
+                        };
+                        const name = payload.name || payload.title || "";
+                        const title =
+                          payload.title || payload.description || "";
+                        const profilePhoto =
+                          payload.profilePhoto ||
+                          payload.icons_details?.left_icon ||
+                          "";
+                        system = {
+                          kind: "new_nutritionist",
+                          id: payload.id || "",
+                          name: name,
+                          title: title,
+                          profilePhoto: profilePhoto,
+                          payload: {
+                            action_type: payload.action_type,
+                            icons_details: payload.icons_details,
+                          },
+                        };
+                        messageType = "system";
+                        const systemData: SystemMessageData = {
+                          kind: parsed.kind,
+                          ...parsed.payload,
+                        };
+                        messageContent =
+                          name || title || getSystemLabel(systemData);
+                      } else {
+                        system = parsed;
+                        messageType = "system";
+                        const systemData: SystemMessageData = {
+                          kind: parsed.kind,
+                          ...parsed.payload,
+                        };
+                        messageContent = getSystemLabel(systemData);
+                      }
+                    }
+                  }
+                }
+              }
+            } catch {
+              // not JSON -> keep as text
+            }
+          }
+
+          // Filter out hidden call messages (only one user joined)
+          if (messageType === "hidden") {
+            return null;
+          }
+
+          const generatedId = `incoming-${peerId}-${logHash}-${logIndex}-${uniqueTimestamp}`;
+
+          // Console log for video call message ID from logs
+
+          // Ensure products is always an array when messageType is products
+          const finalProducts =
+            messageType === "products"
+              ? Array.isArray(products)
+                ? products
+                : []
+              : products;
+
+          return {
+            id: generatedId, // Include logIndex and timestamp to ensure unique IDs for consecutive duplicate messages
+            sender,
+            content: messageContent,
+            imageData: imageData ?? undefined,
+            imageUrl,
+            fileName,
+            fileSize: fileSize ?? undefined,
+            messageType,
+            system: system ? (system as SystemMessageData) : undefined,
+            audioUrl,
+            audioDurationMs,
+            audioTranscription,
+            fileUrl,
+            fileMime,
+            fileSizeBytes,
+            products: finalProducts,
+            callType,
+            callDurationSeconds,
+            channel: callChannel,
+            createdAt: messageTime,
+            timestamp: messageTime.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            isIncoming: true, // Incoming message - left side
+            avatar: selectedContact?.avatar || config.defaults.avatar,
+            peerId, // Store peerId for conversation tracking
+          };
+        }
+      })
+      .filter((msg) => msg !== null); // Filter out null messages (hidden call messages)
+
+    // Only show messages for the current conversation (peerId)
+    setMessages((prev) => {
+      // If peerId changed, reset messages for the new conversation
+
+      const currentPeerMessages = prev.filter((msg) => msg.peerId === peerId);
+
+      // Create a set of existing message IDs to prevent duplicates
+      const existingIds = new Set(currentPeerMessages.map((msg) => msg.id));
+
+      // Helper function to create matching key (same as in server fetch)
+      const normalizeContent = (content: string | null | undefined): string => {
+        if (!content) return "";
+        try {
+          const parsed = JSON.parse(content);
+          return JSON.stringify(parsed);
+        } catch {
+          return String(content).trim();
+        }
+      };
+
+      const createMatchKey = (msg: Message): string => {
+        const normalizedContent = normalizeContent(msg.content);
+        const createdAt = msg.createdAt ? new Date(msg.createdAt) : new Date();
+        const timeWindow = Math.floor(createdAt.getTime() / 300000); // 5-minute window
+
+        // For custom messages, include messageType and identifying fields in the key
+        if (msg.messageType && msg.messageType !== "text") {
+          let customKey = "";
+
+          // Try to extract from message fields first
+          if (msg.messageType === "image" && msg.imageUrl) {
+            customKey = msg.imageUrl;
+          } else if (msg.messageType === "audio" && msg.audioUrl) {
+            customKey = msg.audioUrl;
+          } else if (msg.messageType === "file" && msg.fileUrl) {
+            customKey = msg.fileUrl;
+          } else if (msg.messageType === "call") {
+            // For call messages, use content-based matching (not ID) so log and server messages match
+            // Extract action and duration from message object or content
+            let callAction = msg.callAction || "";
+            let callDuration =
+              msg.callDurationSeconds != null
+                ? String(msg.callDurationSeconds)
+                : "";
+            let callType = msg.callType || "video";
+            let callChannel = msg.channel || "";
+
+            // If fields not on message object, try to extract from content
+            if (
+              (!callAction || !callChannel) &&
+              typeof msg.content === "string"
+            ) {
+              try {
+                const contentObj = JSON.parse(msg.content);
+                if (contentObj && typeof contentObj === "object") {
+                  if (contentObj.action) callAction = contentObj.action;
+                  if (contentObj.duration != null)
+                    callDuration = String(contentObj.duration);
+                  if (contentObj.callType) callType = contentObj.callType;
+                  if (contentObj.channel) callChannel = contentObj.channel;
+                }
+              } catch {}
+            }
+
+            // Use content-based key with timestamp in 2-second window to match log/server messages
+            // This allows log and server messages of the same call to match
+            // But different calls (different durations or times > 2s apart) won't match
+            const createdAt = msg.createdAt
+              ? new Date(msg.createdAt)
+              : new Date();
+            const timestampSeconds = Math.floor(createdAt.getTime() / 2000);
+            customKey = `${callType}-${callChannel}-${callAction}-${callDuration}-${timestampSeconds}`;
+          } else if (msg.messageType === "products" && msg.products) {
+            // For products, use timestamp-based matching to allow multiple sends
+            // Extract first product action_id or title for uniqueness
+            let productKey = "";
+            if (Array.isArray(msg.products) && msg.products.length > 0) {
+              productKey =
+                msg.products[0]?.action_id || msg.products[0]?.title || "";
+            }
+            const createdAt = msg.createdAt
+              ? new Date(msg.createdAt)
+              : new Date();
+            const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+            customKey = productKey
+              ? `${productKey}-${timestampSeconds}`
+              : `products-${timestampSeconds}`;
+          }
+
+          // If customKey is still empty, try to extract from content JSON
+          if (!customKey && typeof msg.content === "string") {
+            try {
+              const contentObj = JSON.parse(msg.content);
+              if (contentObj && typeof contentObj === "object") {
+                if (msg.messageType === "image" && contentObj.url) {
+                  customKey = contentObj.url;
+                } else if (msg.messageType === "audio" && contentObj.url) {
+                  customKey = contentObj.url;
+                } else if (msg.messageType === "file" && contentObj.url) {
+                  customKey = contentObj.url;
+                } else if (msg.messageType === "call") {
+                  // For call messages from content, use content-based matching
+                  const callAction = contentObj.action || "";
+                  const callDuration =
+                    contentObj.duration != null
+                      ? String(contentObj.duration)
+                      : "";
+                  const callType = contentObj.callType || "video";
+                  const callChannel = contentObj.channel || "";
+                  // Use content-based key with 2-second timestamp window
+                  const createdAt = msg.createdAt
+                    ? new Date(msg.createdAt)
+                    : new Date();
+                  const timestampSeconds = Math.floor(
+                    createdAt.getTime() / 2000
+                  );
+                  customKey = `${callType}-${callChannel}-${callAction}-${callDuration}-${timestampSeconds}`;
+                } else if (msg.messageType === "products") {
+                  // Handle both array and stringified products formats
+                  // Also handle 'product_list' for recommended_products
+                  let productsArray = [];
+                  if (Array.isArray(contentObj.products)) {
+                    productsArray = contentObj.products;
+                  } else if (Array.isArray(contentObj.product_list)) {
+                    productsArray = contentObj.product_list;
+                  } else if (typeof contentObj.products === "string") {
+                    try {
+                      const parsed = JSON.parse(contentObj.products);
+                      productsArray = Array.isArray(parsed) ? parsed : [];
+                    } catch {
+                      productsArray = [];
+                    }
+                  }
+                  // Use timestamp-based matching to allow multiple sends
+                  let productKey = "";
+                  if (productsArray.length > 0) {
+                    productKey =
+                      productsArray[0]?.action_id ||
+                      productsArray[0]?.title ||
+                      "";
+                  }
+                  const createdAt = msg.createdAt
+                    ? new Date(msg.createdAt)
+                    : new Date();
+                  const timestampSeconds = Math.floor(
+                    createdAt.getTime() / 1000
+                  );
+                  customKey = productKey
+                    ? `${productKey}-${timestampSeconds}`
+                    : `products-${timestampSeconds}`;
+                }
+              }
+            } catch {
+              // Not JSON, ignore
+            }
+          }
+
+          if (customKey) {
+            // For call messages, don't use timeWindow since customKey already includes timestamp
+            // Use only messageType, customKey, and sender
+            if (
+              msg.messageType === "call" ||
+              msg.messageType === "video_call" ||
+              msg.messageType === "voice_call"
+            ) {
+              // Use the new format type for matching
+              const matchType =
+                msg.messageType === "call"
+                  ? msg.callType === "audio"
+                    ? "voice_call"
+                    : "video_call"
+                  : msg.messageType;
+              return `${matchType}-${customKey}-${msg.sender}`;
+            }
+            // For products messages, customKey already includes timestamp, so don't add timeWindow
+            if (msg.messageType === "products") {
+              return `${msg.messageType}-${customKey}-${msg.sender}`;
+            }
+            return `${msg.messageType}-${customKey}-${msg.sender}-${timeWindow}`;
+          }
+
+          // For system messages (meal_plan_updated, new_nutritionist, etc.), use timestamp to allow duplicates
+          if (msg.messageType === "system" && msg.system) {
+            // Use a more granular timestamp (1-second window) to allow multiple system messages
+            const createdAt = msg.createdAt
+              ? new Date(msg.createdAt)
+              : new Date();
+            const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+            const systemKind = msg.system.kind || "";
+            return `${msg.messageType}-${systemKind}-${msg.sender}-${timestampSeconds}`;
+          }
+
+          // For new message types (general_notification, video_call, voice_call, documents)
+          // Use timestamp-based matching to allow both sent and received versions
+          if (
+            msg.messageType === "general_notification" ||
+            msg.messageType === "video_call" ||
+            msg.messageType === "voice_call" ||
+            msg.messageType === "documents"
+          ) {
+            const createdAt = msg.createdAt
+              ? new Date(msg.createdAt)
+              : new Date();
+            const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+            // Include sender to differentiate between sent and received
+            return `${msg.messageType}-${msg.sender}-${timestampSeconds}`;
+          }
+        }
+
+        // For text messages, use a 1-second timestamp window to allow duplicates
+        // This allows the same text message to be sent multiple times
+        if (msg.messageType === "text" || !msg.messageType) {
+          const createdAt = msg.createdAt
+            ? new Date(msg.createdAt)
+            : new Date();
+          const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+          return `${normalizedContent}-${msg.sender}-${timestampSeconds}`;
+        }
+
+        // Fallback to content-based matching for other messages
+        return `${normalizedContent}-${msg.sender}-${timeWindow}`;
+      };
+
+      // Create a map of existing messages by their match key
+      const existingMessagesByKey = new Map();
+      currentPeerMessages.forEach((msg) => {
+        const key = createMatchKey(msg);
+        if (!existingMessagesByKey.has(key)) {
+          existingMessagesByKey.set(key, msg);
+        }
+      });
+
+      // Filter out messages that match existing messages by content/key (not just ID)
+      // This prevents duplicates when server messages already exist
+      const uniqueNewMessages = newMessages.filter((msg) => {
+        // First check by ID (for exact duplicates)
+        if (existingIds.has(msg.id)) {
+          return false;
+        }
+        // Then check by content/key (to match with server messages that have different IDs)
+        const key = createMatchKey(msg);
+        const existingMsg = existingMessagesByKey.get(key);
+        if (existingMsg) {
+          // If a match key exists, prefer server messages over log messages
+          // Server messages have IDs that don't start with "outgoing-" or "incoming-"
+          const isExistingServerMsg =
+            !existingMsg.id.startsWith("outgoing-") &&
+            !existingMsg.id.startsWith("incoming-");
+          const isNewLogMsg =
+            msg.id.startsWith("outgoing-") || msg.id.startsWith("incoming-");
+          const isNewServerMsg =
+            !msg.id.startsWith("outgoing-") && !msg.id.startsWith("incoming-");
+
+          // If existing is server and new is log, filter out the new log message
+          if (isExistingServerMsg && isNewLogMsg) {
+            return false;
+          }
+          // If existing is log and new is server, keep the server message
+          // The log message will be replaced in the merge step below
+          if (!isExistingServerMsg && isNewServerMsg) {
+            return true; // Keep server message, log message will be removed in merge
+          }
+          // If both are log messages, filter out the new one (keep the first)
+          if (!isExistingServerMsg && isNewLogMsg) {
+            return false;
+          }
+          // If both are server messages with same key, filter out the new one
+          if (isExistingServerMsg && isNewServerMsg) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      // If no new unique messages, return existing state
+      if (uniqueNewMessages.length === 0) {
+        return prev;
+      }
+
+      // If no existing messages for this peer, return new messages
+      if (currentPeerMessages.length === 0) {
+        return uniqueNewMessages;
+      }
+
+      // Merge: keep existing messages for this peer + add new unique ones
+      // First, collect all server messages and their match keys
+      const allMessagesTemp = [
+        ...currentPeerMessages,
+        ...uniqueNewMessages,
+      ].filter((msg) => msg !== null && msg.createdAt); // Filter out null messages and messages without createdAt
+
+      const serverMessageKeys = new Set();
+      allMessagesTemp.forEach((msg) => {
+        const isServerMsg =
+          !msg.id.startsWith("outgoing-") && !msg.id.startsWith("incoming-");
+        if (isServerMsg) {
+          const key = createMatchKey(msg);
+          serverMessageKeys.add(key);
+        }
+      });
+
+      // Sort by logIndex to maintain chronological order
+      const allMessages = allMessagesTemp
+        .filter((msg, index, self) => {
+          // Remove duplicates by ID (first check)
+          const idIndex = self.findIndex((m) => m.id === msg.id);
+          if (idIndex !== index) {
+            return false;
+          }
+          // Also check by match key to catch any remaining duplicates
+          const key = createMatchKey(msg);
+          const isLogMsg =
+            msg.id.startsWith("outgoing-") || msg.id.startsWith("incoming-");
+
+          // If this is a log message and we have a server message with the same key, filter it out
+          if (isLogMsg && serverMessageKeys.has(key)) {
+            return false;
+          }
+
+          // Remove other duplicates by match key (keep first occurrence)
+          const keyIndex = self.findIndex((m) => createMatchKey(m) === key);
+          if (keyIndex !== index) {
+            return false;
+          }
+
+          return true;
+        })
+        .sort((a, b) => {
+          const aDate = a.createdAt ? new Date(a.createdAt) : new Date(0);
+          const bDate = b.createdAt ? new Date(b.createdAt) : new Date(0);
+          return aDate.getTime() - bDate.getTime();
+        });
+
+      // Return merged messages along with messages from other peers
+      const otherPeerMessages = prev.filter((msg) => msg.peerId !== peerId);
+      return [...otherPeerMessages, ...allMessages];
+    });
+  }, [logs, peerId, selectedContact]);
+
+  // Sync chatClient prop to ref
+  useEffect(() => {
+    chatClientRef.current = chatClient;
+  }, [chatClient]);
+
+  // Fetch last 20 messages whenever peer changes (only once per peer)
+  useEffect(() => {
+    if (!peerId) return;
+
+    // Get the current peer from the ref to detect changes
+    const currentFetchedPeer = fetchedPeersRef.current.currentPeer;
+
+    // If peerId changed, reset the fetched set for the new peer
+    if (currentFetchedPeer !== peerId) {
+      fetchedPeersRef.current.fetchedPeers = new Set();
+      fetchedPeersRef.current.currentPeer = peerId;
+      // Reset cursor and hasMore when peer changes
+      setCursor(null);
+      setHasMore(true);
+    }
+
+    // Check if we've already fetched history for this peer
+    if (fetchedPeersRef.current.fetchedPeers.has(peerId)) {
+      return;
+    }
+
+    // Fetch messages from API
+    const checkAndFetch = async () => {
+      try {
+        await fetchInitialMessages();
+        // Mark this peer as fetched
+        fetchedPeersRef.current.fetchedPeers.add(peerId);
+      } catch (err) {
+        console.error("Error while fetching:", err);
+      }
+    };
+
+    checkAndFetch();
+  }, [peerId]);
+
+  // Filter messages to only show current conversation when displaying
+
+  const currentConversationMessages = messages.filter(
+    (msg) => msg.peerId === peerId
+  );
+
+  // Auto-scroll when messages change
+  useEffect(() => {
+    // 🧠 Prevent auto-scroll during history loading
+    if (isLoadingHistoryRef.current || skipAutoScrollRef.current) return;
+
+    const chatArea = chatAreaRef.current;
+    if (!chatArea) return;
+
+    // Only scroll if the user is near the bottom
+    const isNearBottom =
+      chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < 100;
+
+    if (isNearBottom) {
+      setTimeout(() => scrollToBottom(), 50);
+    }
+  }, [currentConversationMessages]);
+
+  // Reset input key when peer changes to ensure clean state
+  useEffect(() => {
+    setInputResetKey(0);
+  }, [peerId]);
+
+  // Set up non-passive touch event listener for audio button
+  useEffect(() => {
+    const audioBtn = audioBtnRef.current;
+    if (!audioBtn) return;
+
+    const handleTouchStart = (e: TouchEvent): void => {
+      if (!isRecording && selectedContact) {
+        e.preventDefault();
+        startAudioRecording();
+      }
+    };
+
+    // Add event listener with { passive: false } to allow preventDefault
+    audioBtn.addEventListener("touchstart", handleTouchStart, {
+      passive: false,
+    });
+
+    return () => {
+      audioBtn.removeEventListener("touchstart", handleTouchStart);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRecording, selectedContact]); // startAudioRecording is stable, no need to include
+
+  // Watch for message clearing after send to reset input
+  useEffect(() => {
+    // Detect when message transitions from non-empty to empty (after sending)
+    // This ensures the input remounts AFTER the message is cleared
+    const prevMessage = prevMessageRef.current;
+    const currentMessage = message || "";
+
+    // If message was non-empty and is now empty, and we have a peer, reset input
+    const prevIsEmpty =
+      typeof prevMessage === "string" ? prevMessage.trim() : prevMessage;
+    const currentIsEmpty =
+      typeof currentMessage === "string"
+        ? currentMessage.trim()
+        : currentMessage;
+    if (prevIsEmpty && !currentIsEmpty && peerId) {
+      // Message was cleared after send, increment key to remount input
+      setInputResetKey((prev) => prev + 1);
+    }
+
+    // Update ref for next comparison
+    prevMessageRef.current = currentMessage;
+  }, [message, peerId]);
+
+  // Restore focus to input after it remounts (when reset key changes)
+  useEffect(() => {
+    if (inputRef.current && selectedContact) {
+      // Small delay to ensure input is fully mounted
+      const timer = setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 10);
+      return () => clearTimeout(timer);
+    }
+  }, [inputResetKey, selectedContact]);
+
+  const isSendingRef = useRef(false);
+
+  const handleSendMessage = (): void => {
+    // Prevent multiple simultaneous sends
+    if (isSendingRef.current) {
+      return;
+    }
+
+    // Capture the exact message value to send BEFORE any state changes
+    const currentMessage = draftAttachment ? getDraftCaption() : message;
+    const hasMessage =
+      typeof currentMessage === "string"
+        ? currentMessage.trim()
+        : currentMessage;
+
+    if (!hasMessage && !draftAttachment) {
+      return;
+    }
+
+    // For draft attachments, we need to send the full JSON payload, not just the caption
+    const messageToSend = draftAttachment ? message : currentMessage;
+
+    // Mark as sending immediately to prevent any other sends
+    isSendingRef.current = true;
+
+    // Clear the message state immediately to prevent it from being read again
+    if (draftAttachment) {
+      clearDraftAttachment();
+    } else {
+      setMessage("");
+    }
+
+    // Call onSend with the message value directly to avoid race conditions
+    // The parent will use this value instead of reading from the message prop
+    onSend(messageToSend);
+
+    // Reset the flag after a delay to allow the send to complete
+    setTimeout(() => {
+      isSendingRef.current = false;
+    }, 500);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === "Enter") {
+      handleSendMessage();
+    }
+  };
+
+  // Demo message samples for testing
+  // @ts-expect-error - Demo function for testing, may be used in future
+  const _sendDemoMessage = (type: string): void => {
+    if (!peerId) return;
+
+    let demoPayload = {};
+
+    switch (type) {
+      case "image":
+        demoPayload = {
+          type: "image",
+          url: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=800&h=600&fit=crop",
+          fileName: "demo-image.jpg",
+          width: 800,
+          height: 600,
+        };
+        break;
+
+      case "audio":
+        demoPayload = {
+          type: "audio",
+          url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+          duration: 30, // seconds
+          transcription: "This is a demo audio transcription",
+        };
+        break;
+
+      case "file":
+        demoPayload = {
+          type: "file",
+          url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+          fileName: "demo-document.pdf",
+          mimeType: "application/pdf",
+          size: 102400, // bytes
+        };
+        break;
+
+      case "call":
+        // Convert old "call" demo to new format
+        demoPayload = {
+          type: "video_call",
+          title: "Video call",
+          description: "",
+          call_details: {
+            call_url: `demo-call-${Date.now()}`,
+          },
+        };
+        break;
+
+      case "meal_plan_updated":
+        demoPayload = {
+          type: "meal_plan_updated",
+        };
+        break;
+
+      case "new_nutritionist":
+        demoPayload = {
+          type: "new_nutritionist",
+          id: "NUT001",
+          name: "Dr. Jane Smith",
+          title: "Senior Nutritionist",
+          profilePhoto:
+            "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&h=200&fit=crop&crop=face",
+        };
+        break;
+
+      case "products":
+        demoPayload = {
+          type: "products",
+          products: [
+            {
+              id: "PROD001",
+              name: "Hello Healthy Coffee (South Indian)",
+              price: 579,
+              originalPrice: 999,
+              image:
+                "https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=400&h=400&fit=crop",
+            },
+          ],
+        };
+        break;
+
+      default:
+        return;
+    }
+
+    setShowDemoMenu(false);
+    setMessage(JSON.stringify(demoPayload));
+    // Auto-send after a small delay
+    setTimeout(() => {
+      onSend(JSON.stringify(demoPayload));
+    }, 100);
+  };
+
+  // Close media popup when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent): void => {
+      const target = event.target as Node;
+      if (
+        mediaPopupRef.current &&
+        !mediaPopupRef.current.contains(target) &&
+        !(target as Element).closest(".icon-btn")
+      ) {
+        setShowMediaPopup(false);
+      }
+      if (
+        demoMenuRef.current &&
+        !demoMenuRef.current.contains(target) &&
+        !(target as Element).closest(".demo-btn")
+      ) {
+        setShowDemoMenu(false);
+      }
+    };
+
+    if (showMediaPopup || showDemoMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }
+  }, [showMediaPopup, showDemoMenu]);
+
+  // 👉 Close picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent): void => {
+      const target = event.target as Node;
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(target) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(target)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    document.addEventListener("click", handleClickOutside, true);
+    return () =>
+      document.removeEventListener("click", handleClickOutside, true);
+  }, []);
+
+  // Handle emoji selection and make navigation bar scrollable
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+
+    let pickerElement: Element | null = null;
+    let handleEmojiSelect: ((event: Event) => void) | null = null;
+
+    const setupEmojiPicker = () => {
+      // emojiPickerRef points to the container, so we need to find the emoji-picker element
+      pickerElement =
+        emojiPickerRef.current?.querySelector("emoji-picker") ||
+        document.querySelector("emoji-picker.emoji-picker-element");
+      if (!pickerElement) return;
+
+      // Add event listener for emoji selection
+      // emoji-picker-element fires different events, try multiple
+      handleEmojiSelect = (event: Event): void => {
+        const customEvent = event as CustomEvent;
+        // Try different event structures
+        const emoji =
+          customEvent.detail?.unicode ||
+          (
+            customEvent.detail as {
+              emoji?: { unicode?: string };
+              unicode?: string;
+            }
+          )?.emoji?.unicode ||
+          (customEvent.detail as { unicode?: string })?.unicode ||
+          customEvent.detail ||
+          (event as { emoji?: string }).emoji ||
+          (event as { unicode?: string }).unicode;
+
+        if (emoji && typeof emoji === "string") {
+          setMessage((prev: string) => prev + emoji);
+        }
+      };
+
+      // Try multiple event names that emoji-picker-element might use
+      pickerElement.addEventListener("emoji-click", handleEmojiSelect);
+      pickerElement.addEventListener("emojiClick", handleEmojiSelect);
+      pickerElement.addEventListener("change", handleEmojiSelect);
+
+      // Try to access shadow DOM for navigation styling
+      const shadowRoot = pickerElement.shadowRoot;
+      if (shadowRoot) {
+        // Common selectors for navigation in emoji-picker-element
+        const navSelectors = [
+          "nav",
+          ".nav",
+          '[part="nav"]',
+          ".category-nav",
+          ".epr-category-nav",
+          ".category-buttons",
+          'div[role="tablist"]',
+          ".tabs",
+        ];
+
+        for (const selector of navSelectors) {
+          const navElement = shadowRoot.querySelector(selector);
+          if (navElement && navElement instanceof HTMLElement) {
+            navElement.style.overflowX = "auto";
+            navElement.style.overflowY = "hidden";
+            navElement.style.whiteSpace = "nowrap";
+            navElement.style.display = "flex";
+            navElement.style.scrollbarWidth = "thin";
+            (
+              navElement.style as unknown as {
+                webkitOverflowScrolling?: string;
+              }
+            ).webkitOverflowScrolling = "touch";
+            break; // Found and styled, exit
+          }
+        }
+
+        // Also try to find any horizontal scrollable container
+        const allDivs = shadowRoot.querySelectorAll("div");
+        allDivs.forEach((div) => {
+          const computedStyle = window.getComputedStyle(div);
+          if (
+            computedStyle.display === "flex" &&
+            computedStyle.flexDirection === "row" &&
+            div.children.length > 5 // Likely the nav bar with multiple category buttons
+          ) {
+            div.style.overflowX = "auto";
+            div.style.overflowY = "hidden";
+            div.style.whiteSpace = "nowrap";
+          }
+        });
+      }
+    };
+
+    // Wait for the component to render
+    const timeoutId = setTimeout(setupEmojiPicker, 100);
+
+    return () => {
+      clearTimeout(timeoutId);
+      // Cleanup event listeners
+      if (pickerElement && handleEmojiSelect) {
+        pickerElement.removeEventListener("emoji-click", handleEmojiSelect);
+        pickerElement.removeEventListener("emojiClick", handleEmojiSelect);
+        pickerElement.removeEventListener("change", handleEmojiSelect);
+      }
+    };
+  }, [showEmojiPicker]);
+
+  // Handle Escape key to close image viewer
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && imageViewerUrl) {
+        closeImageViewer();
+      }
+      // Also cancel recording on Escape
+      if (e.key === "Escape" && isRecording) {
+        cancelAudioRecording();
+      }
+    };
+
+    if (imageViewerUrl || isRecording) {
+      document.addEventListener("keydown", handleEscape);
+      return () => {
+        document.removeEventListener("keydown", handleEscape);
+      };
+    }
+  }, [imageViewerUrl, isRecording]);
+
+  // Cleanup effect for recording
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+      if (isRecording) {
+        shouldSendRecordingRef.current = false;
+        if (mediaRecorderRef.current) {
+          mediaRecorderRef.current.stop();
+        }
+        if (audioStreamRef.current) {
+          audioStreamRef.current.getTracks().forEach((track) => track.stop());
+        }
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+        }
+      }
+    };
+  }, [isRecording]);
+
+  const handleMediaSelect = (type: "photos" | "camera" | "file"): void => {
+    setShowMediaPopup(false);
+
+    if (type === "photos") {
+      // Open photo gallery picker (without capture attribute)
+      photoInputRef.current?.click();
+    } else if (type === "file") {
+      // Open file picker
+      fileInputRef.current?.click();
+    } else if (type === "camera") {
+      // Try in-app camera capture (works on desktop + mobile)
+      setShowCameraCapture(true);
+      startCamera();
+    }
+  };
+
+  const handleFileSelect = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ): void => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedMedia(file);
+      // You can preview the file here or send it directly
+      handleSendMedia(file);
+    }
+    // Reset input to allow selecting the same file again
+    event.target.value = "";
+  };
+
+  const handlePhotoSelect = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ): void => {
+    const file = event.target.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      setSelectedMedia(file);
+      handleSendMedia(file);
+    }
+    event.target.value = "";
+  };
+
+  const handleSendMedia = async (file: File): Promise<void> => {
+    if (!peerId || !file) return;
+
+    try {
+      setUploadProgress(0);
+
+      // 🧹 Clean filename
+      const safeFileName = file.name
+        .replace(/\s+/g, "_")
+        .replace(/[^\w.-]/g, "_");
+      const objectKey = `uploads/${
+        peerId || "user"
+      }/${Date.now()}-${safeFileName}`;
+
+      // 1️⃣ Request pre-signed URL
+      const { data } = await axios.post(config.api.generatePresignUrl, {
+        objectKey,
+        expiresInMinutes: config.upload.expiresInMinutes,
+      });
+
+      const { url: uploadUrl, fileUrl } = data;
+
+      // 2️⃣ Upload to S3
+      await axios.put(uploadUrl, file, {
+        headers: { "Content-Type": file.type },
+        onUploadProgress: (event) => {
+          const percent = event.total
+            ? Math.round((event.loaded * 100) / event.total)
+            : 0;
+          setUploadProgress(percent);
+        },
+      });
+
+      const getImageDimensions = (
+        url: string
+      ): Promise<{ width: number; height: number }> => {
+        return new Promise<{ width: number; height: number }>((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve({ width: img.width, height: img.height });
+          img.onerror = () => resolve({ width: 1280, height: 720 });
+          img.src = url;
+        });
+      };
+
+      // 3️⃣ Build chat message
+      let payload;
+
+      if (file.type.startsWith("image/")) {
+        const dims = await getImageDimensions(fileUrl);
+
+        payload = {
+          type: "image",
+          url: fileUrl,
+          fileName: safeFileName,
+          mimeType: file.type,
+          size: file.size,
+          width: dims.width,
+          height: dims.height,
+        };
+      } else {
+        payload = {
+          type: "file",
+          url: fileUrl,
+          fileName: safeFileName,
+          mimeType: file.type,
+          size: file.size,
+        };
+      }
+
+      setMessage(JSON.stringify(payload));
+
+      // 4️⃣ Send
+      setTimeout(() => handleSendMessage(), 100);
+    } catch (error) {
+      console.error("❌ Upload failed:", error);
+      alert("Error uploading file. Please try again.");
+    } finally {
+      setTimeout(() => setUploadProgress(null), 1000);
+    }
+  };
+
+  // Camera: start/stop and capture
+  const startCamera = async (): Promise<void> => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        // Fallback to native file input capture if getUserMedia unavailable
+        cameraInputRef.current?.click();
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (e) {
+      console.error("Camera error:", e);
+      // Fallback to file input if permission denied or not available
+      cameraInputRef.current?.click();
+      setShowCameraCapture(false);
+    }
+  };
+
+  const stopCamera = (): void => {
+    try {
+      const stream = mediaStreamRef.current;
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+    } catch {}
+  };
+
+  const closeCamera = (): void => {
+    stopCamera();
+    setShowCameraCapture(false);
+  };
+
+  const capturePhoto = async (): Promise<void> => {
+    try {
+      const video = videoRef.current;
+      if (!video) return;
+      const width = video.videoWidth || 1280;
+      const height = video.videoHeight || 720;
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, width, height);
+      canvas.toBlob(
+        async (blob) => {
+          if (!blob) return;
+          const file = new File([blob], "camera-photo.jpg", {
+            type: blob.type || "image/jpeg",
+          });
+          await handleSendMedia(file);
+          closeCamera();
+        },
+        "image/jpeg",
+        0.92
+      );
+    } catch (e) {
+      console.error("Capture error:", e);
+    }
+  };
+
+  // Helper function to convert audio blob to WAV format
+  const convertToWAV = async (audioBlob: Blob): Promise<Blob> => {
+    try {
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      const audioContext = new AudioContextClass();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      const sampleRate = audioBuffer.sampleRate;
+      const numChannels = audioBuffer.numberOfChannels;
+      const samples = audioBuffer.getChannelData(0); // Get first channel
+
+      // Create WAV file buffer
+      const buffer = new ArrayBuffer(44 + samples.length * 2);
+      const view = new DataView(buffer);
+
+      // WAV header
+      const writeString = (offset: number, string: string): void => {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
+
+      writeString(0, "RIFF");
+      view.setUint32(4, 36 + samples.length * 2, true);
+      writeString(8, "WAVE");
+      writeString(12, "fmt ");
+      view.setUint32(16, 16, true); // fmt chunk size
+      view.setUint16(20, 1, true); // audio format (1 = PCM)
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numChannels * 2, true); // byte rate
+      view.setUint16(32, numChannels * 2, true); // block align
+      view.setUint16(34, 16, true); // bits per sample
+      writeString(36, "data");
+      view.setUint32(40, samples.length * 2, true);
+
+      // Convert float samples to 16-bit PCM
+      let offset = 44;
+      for (let i = 0; i < samples.length; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        offset += 2;
+      }
+
+      audioContext.close();
+      return new Blob([buffer], { type: "audio/wav" });
+    } catch (error) {
+      console.error("Error converting to WAV:", error);
+      // Fallback: return original blob if conversion fails
+      return audioBlob;
+    }
+  };
+
+  // Audio recording functions
+  const startAudioRecording = async (): Promise<void> => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert("Audio recording is not supported in your browser");
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : MediaRecorder.isTypeSupported("audio/ogg")
+          ? "audio/ogg"
+          : "audio/mp4",
+      });
+
+      audioChunksRef.current = [];
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        // Stop all tracks first
+        if (audioStreamRef.current) {
+          audioStreamRef.current.getTracks().forEach((track) => track.stop());
+          audioStreamRef.current = null;
+        }
+
+        // Calculate actual duration from start time (more accurate than state)
+        const actualDuration = recordingStartTimeRef.current
+          ? Math.floor((Date.now() - recordingStartTimeRef.current) / 1000)
+          : recordingDurationRef.current || recordingDuration;
+
+        // Only send if shouldSendRecordingRef is true (not cancelled)
+        if (
+          shouldSendRecordingRef.current &&
+          audioChunksRef.current.length > 0
+        ) {
+          const audioBlob = new Blob(audioChunksRef.current, {
+            type: mediaRecorder.mimeType || "audio/webm",
+          });
+          // Convert to WAV format
+          const wavBlob = await convertToWAV(audioBlob);
+          await handleSendAudio(wavBlob, actualDuration);
+        }
+
+        // Clear recording state
+        setIsRecording(false);
+        setRecordingDuration(0);
+        recordingStartTimeRef.current = null;
+        recordingDurationRef.current = 0;
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+
+        // Reset flag for next recording
+        shouldSendRecordingRef.current = true;
+      };
+
+      shouldSendRecordingRef.current = true;
+
+      // Clear any existing timer before starting a new one
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+      recordingStartTimeRef.current = Date.now(); // Record start time
+      recordingDurationRef.current = 0; // Reset ref
+
+      // Start timer - calculate duration from start time to avoid double increments
+      recordingTimerRef.current = setInterval(() => {
+        if (recordingStartTimeRef.current) {
+          const elapsed = Math.floor(
+            (Date.now() - recordingStartTimeRef.current) / 1000
+          );
+          recordingDurationRef.current = elapsed;
+          setRecordingDuration(elapsed);
+        }
+      }, 1000);
+    } catch (error) {
+      console.error("Error starting audio recording:", error);
+      alert(
+        "Failed to start audio recording. Please check microphone permissions."
+      );
+      setIsRecording(false);
+    }
+  };
+
+  const stopAudioRecording = (): void => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const cancelAudioRecording = (): void => {
+    if (mediaRecorderRef.current && isRecording) {
+      // Set flag to prevent sending
+      shouldSendRecordingRef.current = false;
+      // Clear chunks without sending
+      audioChunksRef.current = [];
+      // Stop the recorder (this will trigger onstop but won't send due to flag)
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+  };
+
+  const handleSendAudio = async (
+    audioBlob: Blob,
+    durationOverride: number | null = null
+  ): Promise<void> => {
+    if (!peerId || !audioBlob) return;
+
+    // Use provided duration or fall back to state
+    const durationToUse =
+      durationOverride !== null ? durationOverride : recordingDuration;
+
+    try {
+      setUploadProgress(0);
+
+      // Determine file extension based on MIME type (WAV format)
+      const extension = "wav";
+
+      // Create a File object from the blob for consistent handling
+      const fileName = `audio-recording-${Date.now()}.${extension}`;
+      const audioFile = new File([audioBlob], fileName, {
+        type: audioBlob.type,
+      });
+
+      // Clean filename for S3
+      const safeFileName = fileName
+        .replace(/\s+/g, "_")
+        .replace(/[^\w.-]/g, "_");
+      const objectKey = `uploads/${
+        peerId || "user"
+      }/${Date.now()}-${safeFileName}`;
+
+      // 1️⃣ Request pre-signed URL
+      const { data } = await axios.post(config.api.generatePresignUrl, {
+        objectKey,
+        expiresInMinutes: config.upload.expiresInMinutes,
+      });
+
+      const { url: uploadUrl, fileUrl } = data;
+
+      // 2️⃣ Upload to S3
+      await axios.put(uploadUrl, audioFile, {
+        headers: { "Content-Type": audioBlob.type },
+        onUploadProgress: (event) => {
+          const percent = event.total
+            ? Math.round((event.loaded * 100) / event.total)
+            : 0;
+          setUploadProgress(percent);
+        },
+      });
+
+      // 3️⃣ Build chat message with S3 URL
+      const payload = {
+        type: "audio",
+        url: fileUrl, // Use S3 URL instead of blob URL
+        fileName: safeFileName,
+        mimeType: audioBlob.type,
+        size: audioBlob.size,
+        duration: durationToUse, // Duration in seconds (will be converted to ms in App.jsx)
+      };
+
+      // Set message and send
+      setMessage(JSON.stringify(payload));
+
+      // Send after a brief delay to ensure state is set
+      setTimeout(() => {
+        handleSendMessage();
+      }, 100);
+    } catch (error) {
+      console.error("Error uploading audio:", error);
+      alert("Error uploading audio. Please try again.");
+      setMessage(""); // Clear on error
+    } finally {
+      setTimeout(() => setUploadProgress(null), 1000);
+    }
+  };
+
+  // Image viewer helpers
+  const openImageViewer = (url: string, alt?: string): void => {
+    if (!url) return;
+    setImageViewerUrl(url);
+    setImageViewerAlt(alt || "Image");
+    // Optional: lock background scroll if desired
+    document.body.style.overflow = "hidden";
+  };
+
+  const closeImageViewer = (): void => {
+    setImageViewerUrl("");
+    setImageViewerAlt("");
+    document.body.style.overflow = "";
+  };
+
+  // extractCustomMessageData, formatMessage, and convertApiMessageToFormat are now imported from utils
+  // Removed duplicate function definitions - using imported versions instead
+
+  // 🔹 Fetch latest 20 messages from server
+  const fetchInitialMessages = async (): Promise<void> => {
+    if (!peerId) {
+      console.warn("peerId missing, skipping fetch");
+      return;
+    }
+
+    try {
+      // Build URL with query parameters
+      // Format conversationId as "user_{peerId}" as required by the API
+      const conversationId = peerId.startsWith("user_")
+        ? peerId
+        : `user_${peerId}`;
+      const url = new URL(config.api.fetchMessages);
+      url.searchParams.append("conversationId", conversationId);
+      url.searchParams.append("limit", String(config.chat.pageSize || 20));
+
+      const response = await fetch(url.toString());
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch messages: ${response.status}`);
+      }
+
+      const res = await response.json();
+
+      // Set cursor for pagination (nextCursor is the timestamp of the last message)
+      if (res.nextCursor) {
+        setCursor(res.nextCursor);
+        setHasMore(true);
+      } else {
+        setHasMore(false);
+      }
+
+      const oldMessages = res?.messages || [];
+
+      // Convert API messages to format expected by formatMessage
+      const convertedMessages = oldMessages
+        .map((msg: unknown) => convertApiMessageToFormat(msg as ApiMessage))
+        .filter(
+          (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
+        ); // Filter out null messages (healthCoachChanged, mealPlanUpdate, etc.)
+      const formatted = convertedMessages
+        .map((msg: AgoraMessage) =>
+          formatMessage(msg, userId, peerId || "", selectedContact, coachInfo)
+        )
+        .filter((msg: Message | null): msg is Message => msg !== null); // Filter out null messages (hidden call initiate messages, etc.)
+
+      // 🟢 DEDUPLICATE products messages: Filter out duplicates based on product IDs
+      // This prevents the same products message from appearing twice (array vs stringified format)
+      const seenProductKeys = new Set();
+      const deduplicatedFormatted = formatted.filter((msg: Message) => {
+        if (msg.messageType === "products" && msg.products) {
+          // Extract first product ID for deduplication key
+          let firstProductId = "";
+          if (Array.isArray(msg.products)) {
+            firstProductId = msg.products[0]?.id || "";
+          } else if (typeof msg.products === "string") {
+            try {
+              const parsed = JSON.parse(msg.products);
+              if (Array.isArray(parsed) && parsed[0]?.id) {
+                firstProductId = parsed[0].id;
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+
+          if (firstProductId) {
+            const key = `products-${firstProductId}-${msg.sender}`;
+            if (seenProductKeys.has(key)) {
+              return false; // Filter out duplicate
+            }
+            seenProductKeys.add(key);
+          }
+        }
+        return true; // Keep all non-products messages and products without ID
+      });
+
+      // Find the most recent message from history to update last message
+      if (deduplicatedFormatted.length > 0 && onUpdateLastMessageFromHistory) {
+        // Sort by timestamp descending to get the most recent
+        const sortedFormatted = [...deduplicatedFormatted].sort((a, b) => {
+          const aDate = a.createdAt ? new Date(a.createdAt) : new Date(0);
+          const bDate = b.createdAt ? new Date(b.createdAt) : new Date(0);
+          return bDate.getTime() - aDate.getTime();
+        });
+        const mostRecentMessage = sortedFormatted[0];
+        if (mostRecentMessage) {
+          // Update the conversation's last message
+          onUpdateLastMessageFromHistory(peerId, mostRecentMessage);
+        }
+      }
+
+      // Merge with existing messages instead of replacing
+      setMessages((prev) => {
+        // Get existing messages for this peer
+        const existingMessages = prev.filter(
+          (msg: Message) => msg.peerId === peerId
+        );
+
+        // Create a set of existing message IDs to avoid duplicates
+        const existingIds = new Set(existingMessages.map((msg) => msg.id));
+
+        // Filter out fetched messages that already exist by ID
+        const newFetchedMessages = deduplicatedFormatted
+          .reverse()
+          .filter((msg: Message) => !existingIds.has(msg.id));
+
+        // If there are no existing messages for this peer, return fetched ones along with messages from other peers
+        if (existingMessages.length === 0) {
+          const otherPeerMessages = prev.filter((msg) => msg.peerId !== peerId);
+          return [...otherPeerMessages, ...newFetchedMessages];
+        }
+
+        // For messages from logs (with generated IDs), try to match with server messages
+        // This ensures we use server timestamps instead of log timestamps
+        // Match by normalizing content (remove whitespace, handle JSON differences) and sender
+        const normalizeContent = (
+          content: string | null | undefined
+        ): string => {
+          if (!content) return "";
+          try {
+            // Try to parse as JSON and re-stringify to normalize
+            const parsed = JSON.parse(content);
+            return JSON.stringify(parsed);
+          } catch {
+            // Not JSON, return trimmed content
+            return String(content).trim();
+          }
+        };
+
+        // Create a matching key for custom messages using messageType and identifying fields
+        const createMatchKey = (msg: Message): string => {
+          const normalizedContent = normalizeContent(msg.content);
+          const createdAt = msg.createdAt
+            ? new Date(msg.createdAt)
+            : new Date();
+          const timeWindow = Math.floor(createdAt.getTime() / 300000); // 5-minute window
+
+          // For custom messages, include messageType and identifying fields in the key
+          if (msg.messageType && msg.messageType !== "text") {
+            let customKey = "";
+
+            // Try to extract from message fields first
+            if (msg.messageType === "image" && msg.imageUrl) {
+              customKey = msg.imageUrl;
+            } else if (msg.messageType === "audio" && msg.audioUrl) {
+              customKey = msg.audioUrl;
+            } else if (msg.messageType === "file" && msg.fileUrl) {
+              customKey = msg.fileUrl;
+            } else if (msg.messageType === "call") {
+              // For call messages, use content-based matching (not ID) so log and server messages match
+              // Extract action and duration from message object or content
+              let callAction = msg.callAction || "";
+              let callDuration =
+                msg.callDurationSeconds != null
+                  ? String(msg.callDurationSeconds)
+                  : "";
+              let callType = msg.callType || "video";
+              let callChannel = msg.channel || "";
+
+              // If fields not on message object, try to extract from content
+              if (
+                !callAction ||
+                !callChannel ||
+                typeof msg.content === "string"
+              ) {
+                try {
+                  const contentObj = JSON.parse(msg.content);
+                  if (contentObj && typeof contentObj === "object") {
+                    if (contentObj.action) callAction = contentObj.action;
+                    if (contentObj.duration != null)
+                      callDuration = String(contentObj.duration);
+                    if (contentObj.callType) callType = contentObj.callType;
+                    if (contentObj.channel) callChannel = contentObj.channel;
+                  }
+                } catch {}
+              }
+
+              // Use content-based key with timestamp in 2-second window to match log/server messages
+              // This allows log and server messages of the same call to match
+              // But different calls (different durations or times > 2s apart) won't match
+              const createdAt = msg.createdAt
+                ? new Date(msg.createdAt)
+                : new Date();
+              const timestampSeconds = Math.floor(createdAt.getTime() / 2000);
+              customKey = `${callType}-${callChannel}-${callAction}-${callDuration}-${timestampSeconds}`;
+            } else if (msg.messageType === "products") {
+              // For products, extract products array (handle both array and stringified formats)
+              let productsArray = [];
+              if (Array.isArray(msg.products)) {
+                productsArray = msg.products;
+              } else if (typeof msg.products === "string") {
+                try {
+                  const parsed = JSON.parse(msg.products);
+                  productsArray = Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  productsArray = [];
+                }
+              }
+              // Use timestamp-based matching to allow multiple sends
+              let productKey = "";
+              if (productsArray.length > 0) {
+                productKey =
+                  productsArray[0]?.action_id || productsArray[0]?.title || "";
+              }
+              const createdAt = msg.createdAt
+                ? new Date(msg.createdAt)
+                : new Date();
+              const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+              customKey = productKey
+                ? `${productKey}-${timestampSeconds}`
+                : `products-${timestampSeconds}`;
+            }
+
+            // If customKey is still empty, try to extract from content JSON
+            if (!customKey && typeof msg.content === "string") {
+              try {
+                const contentObj = JSON.parse(msg.content);
+                if (contentObj && typeof contentObj === "object") {
+                  if (msg.messageType === "image" && contentObj.url) {
+                    customKey = contentObj.url;
+                  } else if (msg.messageType === "audio" && contentObj.url) {
+                    customKey = contentObj.url;
+                  } else if (msg.messageType === "file" && contentObj.url) {
+                    customKey = contentObj.url;
+                  } else if (msg.messageType === "call") {
+                    // For call messages from content, use content-based matching
+                    const callAction = contentObj.action || "";
+                    const callDuration =
+                      contentObj.duration != null
+                        ? String(contentObj.duration)
+                        : "";
+                    const callType = contentObj.callType || "video";
+                    const callChannel = contentObj.channel || "";
+                    // Use content-based key with 2-second timestamp window
+                    const createdAt = msg.createdAt
+                      ? new Date(msg.createdAt)
+                      : new Date();
+                    const timestampSeconds = Math.floor(
+                      createdAt.getTime() / 2000
+                    );
+                    customKey = `${callType}-${callChannel}-${callAction}-${callDuration}-${timestampSeconds}`;
+                  } else if (msg.messageType === "products") {
+                    // Handle both array and stringified products formats
+                    let productsArray = [];
+                    if (Array.isArray(contentObj.products)) {
+                      productsArray = contentObj.products;
+                    } else if (typeof contentObj.products === "string") {
+                      try {
+                        const parsed = JSON.parse(contentObj.products);
+                        productsArray = Array.isArray(parsed) ? parsed : [];
+                      } catch {
+                        productsArray = [];
+                      }
+                    }
+                    // Use timestamp-based matching to allow multiple sends
+                    let productKey = "";
+                    if (productsArray.length > 0) {
+                      productKey =
+                        productsArray[0]?.action_id ||
+                        productsArray[0]?.title ||
+                        "";
+                    }
+                    const createdAt = msg.createdAt
+                      ? new Date(msg.createdAt)
+                      : new Date();
+                    const timestampSeconds = Math.floor(
+                      createdAt.getTime() / 1000
+                    );
+                    customKey = productKey
+                      ? `${productKey}-${timestampSeconds}`
+                      : `products-${timestampSeconds}`;
+                  }
+                }
+              } catch {
+                // Not JSON, ignore
+              }
+            }
+
+            if (customKey) {
+              // For call messages, don't use timeWindow since customKey already includes timestamp
+              // Use only messageType, customKey, and sender
+              if (
+                msg.messageType === "call" ||
+                msg.messageType === "video_call" ||
+                msg.messageType === "voice_call"
+              ) {
+                // Use the new format type for matching
+                const matchType =
+                  msg.messageType === "call"
+                    ? msg.callType === "audio"
+                      ? "voice_call"
+                      : "video_call"
+                    : msg.messageType;
+                return `${matchType}-${customKey}-${msg.sender}`;
+              }
+              return `${msg.messageType}-${customKey}-${msg.sender}-${timeWindow}`;
+            }
+
+            // For system messages (meal_plan_updated, new_nutritionist, etc.), use timestamp to allow duplicates
+            if (msg.messageType === "system" && msg.system) {
+              // Use a more granular timestamp (1-second window) to allow multiple system messages
+              const createdAt = msg.createdAt
+                ? new Date(msg.createdAt)
+                : new Date();
+              const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+              const systemKind = msg.system.kind || "";
+              // For new_nutritionist messages, include action_type to differentiate coach_assigned vs coach_details
+              if (
+                systemKind === "new_nutritionist" &&
+                msg.system.payload?.action_type
+              ) {
+                const actionType = msg.system.payload.action_type;
+                return `${msg.messageType}-${systemKind}-${actionType}-${msg.sender}-${timestampSeconds}`;
+              }
+              return `${msg.messageType}-${systemKind}-${msg.sender}-${timestampSeconds}`;
+            }
+
+            // For new message types (general_notification, video_call, voice_call, documents)
+            // Use timestamp-based matching to allow both sent and received versions
+            if (
+              msg.messageType === "general_notification" ||
+              msg.messageType === "video_call" ||
+              msg.messageType === "voice_call" ||
+              msg.messageType === "documents"
+            ) {
+              const createdAt = msg.createdAt
+                ? new Date(msg.createdAt)
+                : new Date();
+              const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+              // Include sender to differentiate between sent and received
+              return `${msg.messageType}-${msg.sender}-${timestampSeconds}`;
+            }
+          }
+
+          // Fallback to content-based matching for text and other messages
+          return `${normalizedContent}-${msg.sender}-${timeWindow}`;
+        };
+
+        const serverMessagesByKey = new Map();
+        newFetchedMessages.forEach((msg: Message) => {
+          const key = createMatchKey(msg);
+          if (!serverMessagesByKey.has(key)) {
+            serverMessagesByKey.set(key, msg);
+          }
+        });
+
+        // Track which server messages have been matched
+        const matchedServerMessageIds = new Set();
+
+        // Replace log messages with server messages if they match
+        const updatedExistingMessages = existingMessages.map((logMsg) => {
+          // Only try to match messages from logs (have generated IDs)
+          if (
+            logMsg.id.startsWith("outgoing-") ||
+            logMsg.id.startsWith("incoming-")
+          ) {
+            const key = createMatchKey(logMsg);
+            const serverMsg = serverMessagesByKey.get(key);
+            if (serverMsg) {
+              // Mark this server message as matched
+              matchedServerMessageIds.add(serverMsg.id);
+              // Use server message (has correct timestamp) instead of log message
+              return serverMsg;
+            }
+          }
+          return logMsg;
+        });
+
+        // Remove matched server messages from newFetchedMessages to prevent duplicates
+        const unmatchedFetchedMessages = newFetchedMessages.filter(
+          (msg: Message) => !matchedServerMessageIds.has(msg.id)
+        );
+
+        // Merge: keep updated existing messages + add only unmatched fetched ones
+        // First, collect all server messages and their match keys
+        const allMessagesTemp = [
+          ...updatedExistingMessages,
+          ...unmatchedFetchedMessages,
+        ].filter((msg) => msg !== null && msg.createdAt); // Filter out null messages and messages without createdAt
+
+        const serverMessageKeys = new Set();
+        allMessagesTemp.forEach((msg) => {
+          const isServerMsg =
+            !msg.id.startsWith("outgoing-") && !msg.id.startsWith("incoming-");
+          if (isServerMsg) {
+            const key = createMatchKey(msg);
+            serverMessageKeys.add(key);
+          }
+        });
+
+        // Combine and sort by timestamp to maintain chronological order
+        const allMessages = allMessagesTemp
+          .filter((msg, index, self) => {
+            // Remove duplicates by ID (first check)
+            const idIndex = self.findIndex((m) => m.id === msg.id);
+            if (idIndex !== index) {
+              return false;
+            }
+            // Also check by match key to catch any remaining duplicates
+            const key = createMatchKey(msg);
+            const isLogMsg =
+              msg.id.startsWith("outgoing-") || msg.id.startsWith("incoming-");
+
+            // If this is a log message and we have a server message with the same key, filter it out
+            if (isLogMsg && serverMessageKeys.has(key)) {
+              return false;
+            }
+
+            // Remove other duplicates by match key (keep first occurrence)
+            const keyIndex = self.findIndex((m) => createMatchKey(m) === key);
+            if (keyIndex !== index) {
+              return false;
+            }
+
+            return true;
+          })
+          .sort((a, b) => {
+            const aDate = a.createdAt ? new Date(a.createdAt) : new Date(0);
+            const bDate = b.createdAt ? new Date(b.createdAt) : new Date(0);
+            return aDate.getTime() - bDate.getTime();
+          });
+
+        // Return merged messages along with messages from other peers
+        const otherPeerMessages = prev.filter((msg) => msg.peerId !== peerId);
+        return [...otherPeerMessages, ...allMessages];
+      });
+    } catch (err) {
+      console.error("Error fetching initial messages:", err);
+    }
+  };
+
+  const fetchMoreMessages = async (): Promise<void> => {
+    if (!peerId || isFetchingHistory || !hasMore) return;
+
+    try {
+      setIsFetchingHistory(true);
+
+      const chatArea = chatAreaRef.current;
+      const prevScrollHeight = chatArea?.scrollHeight || 0;
+      const prevScrollTop = chatArea?.scrollTop || 0;
+
+      // Build URL with query parameters
+      // Format conversationId as "user_{peerId}" as required by the API
+      const conversationId = peerId.startsWith("user_")
+        ? peerId
+        : `user_${peerId}`;
+      const url = new URL(config.api.fetchMessages);
+      url.searchParams.append("conversationId", conversationId);
+      url.searchParams.append("limit", "20");
+
+      // Add cursor if available (for pagination)
+      if (cursor) {
+        url.searchParams.append("cursor", String(cursor));
+      }
+
+      const response = await fetch(url.toString());
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch more messages: ${response.status}`);
+      }
+
+      const res = await response.json();
+
+      const newMessages = res?.messages || [];
+      if (newMessages.length === 0) {
+        setHasMore(false);
+        setIsFetchingHistory(false);
+        return;
+      }
+
+      // Set cursor for next pagination
+      if (res.nextCursor) {
+        setCursor(res.nextCursor);
+        setHasMore(true);
+      } else {
+        setHasMore(false);
+      }
+
+      // Convert API messages to format expected by formatMessage
+      const convertedMessages = newMessages
+        .map((msg: unknown) => convertApiMessageToFormat(msg as ApiMessage))
+        .filter(
+          (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
+        ); // Filter out null messages (healthCoachChanged, mealPlanUpdate, etc.)
+      const formatted = convertedMessages
+        .map((msg: AgoraMessage) =>
+          formatMessage(msg, userId, peerId || "", selectedContact, coachInfo)
+        )
+        .filter((msg: Message | null): msg is Message => msg !== null); // Filter out null messages (hidden call initiate messages, etc.)
+
+      // 🟢 DEDUPLICATE products messages: Filter out duplicates based on product IDs
+      // This prevents the same products message from appearing twice (array vs stringified format)
+      const seenProductKeys = new Set();
+      const deduplicatedFormatted = formatted.filter((msg: Message) => {
+        if (msg.messageType === "products" && msg.products) {
+          // Extract first product ID for deduplication key
+          let firstProductId = "";
+          if (Array.isArray(msg.products)) {
+            firstProductId = msg.products[0]?.id || "";
+          } else if (typeof msg.products === "string") {
+            try {
+              const parsed = JSON.parse(msg.products);
+              if (Array.isArray(parsed) && parsed[0]?.id) {
+                firstProductId = parsed[0].id;
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+
+          if (firstProductId) {
+            const key = `products-${firstProductId}-${msg.sender}`;
+            if (seenProductKeys.has(key)) {
+              return false; // Filter out duplicate
+            }
+            seenProductKeys.add(key);
+          }
+        }
+        return true; // Keep all non-products messages and products without ID
+      });
+
+      // 🟡 Prevent scroll-to-bottom behavior
+      isLoadingHistoryRef.current = true;
+      skipAutoScrollRef.current = true;
+
+      setMessages((prev) => {
+        const existing = prev.filter((msg) => msg.peerId === peerId);
+        const existingIds = new Set(existing.map((m) => m.id));
+
+        // Use the same matching logic as initial fetch
+        const normalizeContent = (
+          content: string | null | undefined
+        ): string => {
+          if (!content) return "";
+          try {
+            const parsed = JSON.parse(content);
+            return JSON.stringify(parsed);
+          } catch {
+            return String(content).trim();
+          }
+        };
+
+        const createMatchKey = (msg: Message): string => {
+          const normalizedContent = normalizeContent(msg.content);
+          const createdAt = msg.createdAt
+            ? new Date(msg.createdAt)
+            : new Date();
+          const timeWindow = Math.floor(createdAt.getTime() / 300000);
+
+          if (msg.messageType && msg.messageType !== "text") {
+            let customKey = "";
+
+            // Try to extract from message fields first
+            if (msg.messageType === "image" && msg.imageUrl) {
+              customKey = msg.imageUrl;
+            } else if (msg.messageType === "audio" && msg.audioUrl) {
+              customKey = msg.audioUrl;
+            } else if (msg.messageType === "file" && msg.fileUrl) {
+              customKey = msg.fileUrl;
+            } else if (msg.messageType === "call") {
+              // For call messages, use content-based matching (not ID) so log and server messages match
+              // Extract action and duration from message object or content
+              let callAction = msg.callAction || "";
+              let callDuration =
+                msg.callDurationSeconds != null
+                  ? String(msg.callDurationSeconds)
+                  : "";
+              let callType = msg.callType || "video";
+              let callChannel = msg.channel || "";
+
+              // If fields not on message object, try to extract from content
+              if (
+                !callAction ||
+                !callChannel ||
+                typeof msg.content === "string"
+              ) {
+                try {
+                  const contentObj = JSON.parse(msg.content);
+                  if (contentObj && typeof contentObj === "object") {
+                    if (contentObj.action) callAction = contentObj.action;
+                    if (contentObj.duration != null)
+                      callDuration = String(contentObj.duration);
+                    if (contentObj.callType) callType = contentObj.callType;
+                    if (contentObj.channel) callChannel = contentObj.channel;
+                  }
+                } catch {}
+              }
+
+              // Use content-based key with timestamp in 2-second window to match log/server messages
+              // This allows log and server messages of the same call to match
+              // But different calls (different durations or times > 2s apart) won't match
+              const createdAt = msg.createdAt
+                ? new Date(msg.createdAt)
+                : new Date();
+              const timestampSeconds = Math.floor(createdAt.getTime() / 2000);
+              customKey = `${callType}-${callChannel}-${callAction}-${callDuration}-${timestampSeconds}`;
+            } else if (msg.messageType === "products" && msg.products) {
+              customKey = msg.products[0]?.id || "";
+            }
+
+            // If customKey is still empty, try to extract from content JSON
+            if (!customKey && typeof msg.content === "string") {
+              try {
+                const contentObj = JSON.parse(msg.content);
+                if (contentObj && typeof contentObj === "object") {
+                  if (msg.messageType === "image" && contentObj.url) {
+                    customKey = contentObj.url;
+                  } else if (msg.messageType === "audio" && contentObj.url) {
+                    customKey = contentObj.url;
+                  } else if (msg.messageType === "file" && contentObj.url) {
+                    customKey = contentObj.url;
+                  } else if (msg.messageType === "call") {
+                    // For call messages from content, use content-based matching
+                    const callAction = contentObj.action || "";
+                    const callDuration =
+                      contentObj.duration != null
+                        ? String(contentObj.duration)
+                        : "";
+                    const callType = contentObj.callType || "video";
+                    const callChannel = contentObj.channel || "";
+                    // Use content-based key with 2-second timestamp window
+                    const createdAt = msg.createdAt
+                      ? new Date(msg.createdAt)
+                      : new Date();
+                    const timestampSeconds = Math.floor(
+                      createdAt.getTime() / 2000
+                    );
+                    customKey = `${callType}-${callChannel}-${callAction}-${callDuration}-${timestampSeconds}`;
+                  } else if (msg.messageType === "products") {
+                    // Handle both array and stringified products formats
+                    let productsArray = [];
+                    if (Array.isArray(contentObj.products)) {
+                      productsArray = contentObj.products;
+                    } else if (typeof contentObj.products === "string") {
+                      try {
+                        const parsed = JSON.parse(contentObj.products);
+                        productsArray = Array.isArray(parsed) ? parsed : [];
+                      } catch {
+                        productsArray = [];
+                      }
+                    }
+                    // Use timestamp-based matching to allow multiple sends
+                    let productKey = "";
+                    if (productsArray.length > 0) {
+                      productKey =
+                        productsArray[0]?.action_id ||
+                        productsArray[0]?.title ||
+                        "";
+                    }
+                    const createdAt = msg.createdAt
+                      ? new Date(msg.createdAt)
+                      : new Date();
+                    const timestampSeconds = Math.floor(
+                      createdAt.getTime() / 1000
+                    );
+                    customKey = productKey
+                      ? `${productKey}-${timestampSeconds}`
+                      : `products-${timestampSeconds}`;
+                  }
+                }
+              } catch {
+                // Not JSON, ignore
+              }
+            }
+
+            if (customKey) {
+              // For call messages, don't use timeWindow since customKey already includes timestamp
+              // Use only messageType, customKey, and sender
+              if (
+                msg.messageType === "call" ||
+                msg.messageType === "video_call" ||
+                msg.messageType === "voice_call"
+              ) {
+                // Use the new format type for matching
+                const matchType =
+                  msg.messageType === "call"
+                    ? msg.callType === "audio"
+                      ? "voice_call"
+                      : "video_call"
+                    : msg.messageType;
+                return `${matchType}-${customKey}-${msg.sender}`;
+              }
+              return `${msg.messageType}-${customKey}-${msg.sender}-${timeWindow}`;
+            }
+
+            // For system messages (meal_plan_updated, new_nutritionist, etc.), use timestamp to allow duplicates
+            if (msg.messageType === "system" && msg.system) {
+              // Use a more granular timestamp (1-second window) to allow multiple system messages
+              const createdAt = msg.createdAt
+                ? new Date(msg.createdAt)
+                : new Date();
+              const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+              const systemKind = msg.system.kind || "";
+              // For new_nutritionist messages, include action_type to differentiate coach_assigned vs coach_details
+              if (
+                systemKind === "new_nutritionist" &&
+                msg.system.payload?.action_type
+              ) {
+                const actionType = msg.system.payload.action_type;
+                return `${msg.messageType}-${systemKind}-${actionType}-${msg.sender}-${timestampSeconds}`;
+              }
+              return `${msg.messageType}-${systemKind}-${msg.sender}-${timestampSeconds}`;
+            }
+
+            // For new message types (general_notification, video_call, voice_call, documents)
+            // Use timestamp-based matching to allow both sent and received versions
+            if (
+              msg.messageType === "general_notification" ||
+              msg.messageType === "video_call" ||
+              msg.messageType === "voice_call" ||
+              msg.messageType === "documents"
+            ) {
+              const createdAt = msg.createdAt
+                ? new Date(msg.createdAt)
+                : new Date();
+              const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+              // Include sender to differentiate between sent and received
+              return `${msg.messageType}-${msg.sender}-${timestampSeconds}`;
+            }
+          }
+
+          // For text messages, use a 1-second timestamp window to allow duplicates
+          // This allows the same text message to be sent multiple times
+          if (msg.messageType === "text" || !msg.messageType) {
+            const createdAt = msg.createdAt
+              ? new Date(msg.createdAt)
+              : new Date();
+            const timestampSeconds = Math.floor(createdAt.getTime() / 1000);
+            return `${normalizedContent}-${msg.sender}-${timestampSeconds}`;
+          }
+
+          // Fallback to content-based matching for other messages
+          return `${normalizedContent}-${msg.sender}-${timeWindow}`;
+        };
+
+        const existingMessagesByKey = new Map();
+        existing.forEach((msg) => {
+          const key = createMatchKey(msg);
+          if (!existingMessagesByKey.has(key)) {
+            existingMessagesByKey.set(key, msg);
+          }
+        });
+
+        // Filter by both ID and content/key matching
+        const unique = deduplicatedFormatted.reverse().filter((m: Message) => {
+          if (existingIds.has(m.id)) {
+            return false;
+          }
+          const key = createMatchKey(m);
+          return !existingMessagesByKey.has(key);
+        });
+
+        return [...unique, ...prev];
+      });
+
+      // 🧭 Maintain exact scroll position
+      requestAnimationFrame(() => {
+        if (!chatArea) return;
+        const newScrollHeight = chatArea.scrollHeight || 0;
+        chatArea.scrollTop =
+          newScrollHeight - (prevScrollHeight - prevScrollTop);
+        // Delay resetting the flags until the next repaint
+        setTimeout(() => {
+          isLoadingHistoryRef.current = false;
+          skipAutoScrollRef.current = false;
+        }, 200);
+      });
+    } catch (err) {
+      console.error("Error fetching more messages:", err);
+      isLoadingHistoryRef.current = false;
+      skipAutoScrollRef.current = false;
+    } finally {
+      setIsFetchingHistory(false);
+    }
+  };
+
+  return (
+    <div className="chat-interface">
+      <FPChatHeader
+        selectedContact={selectedContact}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onBackToConversations={onBackToConversations}
+        onInitiateCall={onInitiateCall}
+      />
+
+      {/* Chat Area */}
+      <div className="chat-area" ref={chatAreaRef}>
+        {isFetchingHistory && (
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              background: "white",
+              zIndex: 10,
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: "8px",
+              color: "#6b7280",
+              fontSize: "0.85rem",
+            }}
+          >
+            <div
+              className="spinner"
+              style={{
+                width: "18px",
+                height: "18px",
+                border: "2px solid #d1d5db",
+                borderTop: "2px solid #2563eb",
+                borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+                marginRight: "8px",
+              }}
+            ></div>
+            Loading older messages...
+          </div>
+        )}
+
+        {activeTab === "Chat" && (
+          <FPChatTab
+            peerId={peerId || ""}
+            currentConversationMessages={currentConversationMessages}
+            selectedContact={selectedContact}
+            userId={userId}
+            formatDateLabel={formatDateLabel}
+            formatCurrency={formatCurrency}
+            openImageViewer={openImageViewer}
+            currentlyPlayingAudioRef={currentlyPlayingAudioRef}
+          />
+        )}
+        {activeTab === "Info" && (
+          <FPInfoTab selectedContact={selectedContact} />
+        )}
+        {activeTab === "Description" && (
+          <FPDescriptionTab
+            selectedContact={selectedContact}
+            chatClient={chatClient as Connection | null}
+            peerId={peerId}
+            userId={userId}
+          />
+        )}
+      </div>
+
+      {/* Message Input - Only show on Chat tab */}
+      {activeTab === "Chat" && (
+        <div className="message-input-area">
+          {uploadProgress !== null && (
+            <div
+              style={{
+                width: "100%",
+                background: "#e5e7eb",
+                borderRadius: 4,
+                overflow: "hidden",
+                marginBottom: 8,
+                height: 8,
+              }}
+            >
+              <div
+                style={{
+                  width: `${uploadProgress}%`,
+                  height: "100%",
+                  background: "#2563eb",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+          )}
+
+          <FPDraftAttachmentPreview
+            draftAttachment={draftAttachment}
+            onRemove={clearDraftAttachment}
+            onImageClick={openImageViewer}
+            formatDuration={formatDuration}
+            currentlyPlayingAudioRef={currentlyPlayingAudioRef}
+          />
+
+          <FPMessageInput
+            message={message}
+            setMessage={
+              setMessage as (msg: string | ((prev: string) => string)) => void
+            }
+            draftAttachment={draftAttachment}
+            getDraftCaption={getDraftCaption}
+            selectedContact={selectedContact}
+            isRecording={isRecording}
+            peerId={peerId || ""}
+            inputResetKey={inputResetKey}
+            onSend={handleSendMessage}
+            onKeyPress={handleKeyPress}
+            onStartAudioRecording={startAudioRecording}
+            onToggleMediaPopup={() => setShowMediaPopup(!showMediaPopup)}
+            onToggleEmojiPicker={toggleEmojiPicker}
+            showEmojiPicker={showEmojiPicker}
+            audioBtnRef={audioBtnRef as React.RefObject<HTMLButtonElement>}
+            inputRef={inputRef as React.RefObject<HTMLInputElement>}
+            buttonRef={buttonRef as React.RefObject<HTMLButtonElement>}
+            emojiPickerRef={emojiPickerRef as React.RefObject<HTMLDivElement>}
+          />
+        </div>
+      )}
+
+      {/* Media Upload Popup */}
+      <FPMediaPopup
+        showMediaPopup={showMediaPopup}
+        onSelect={handleMediaSelect}
+        onClose={() => setShowMediaPopup(false)}
+      />
+
+      {/* Audio Recording Overlay */}
+      <FPAudioRecordingOverlay
+        isRecording={isRecording}
+        recordingDuration={recordingDuration}
+        onCancel={cancelAudioRecording}
+        onStop={stopAudioRecording}
+        formatDuration={formatDuration}
+      />
+
+      {/* Camera Capture Overlay */}
+      <FPCameraCaptureOverlay
+        showCameraCapture={showCameraCapture}
+        videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+        onClose={closeCamera}
+        onCapture={capturePhoto}
+      />
+
+      {/* Fullscreen Image Viewer */}
+      <FPImageViewer
+        imageUrl={imageViewerUrl}
+        imageAlt={imageViewerAlt}
+        onClose={closeImageViewer}
+      />
+
+      {/* Hidden file inputs */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: "none" }}
+        onChange={handleFileSelect}
+        accept="*/*"
+      />
+      <input
+        type="file"
+        ref={photoInputRef}
+        style={{ display: "none" }}
+        onChange={handlePhotoSelect}
+        accept="image/*"
+      />
+      <input
+        type="file"
+        ref={cameraInputRef}
+        style={{ display: "none" }}
+        onChange={handlePhotoSelect}
+        accept="image/*"
+        capture="environment"
+      />
+    </div>
+  );
+}
