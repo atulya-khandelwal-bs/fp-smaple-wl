@@ -162,6 +162,7 @@ export default function FPCallMessageView({
               cursor: "pointer",
               padding: 0,
               transition: "opacity 0.2s",
+              color: "#000",
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.opacity = "0.8";
@@ -170,7 +171,8 @@ export default function FPCallMessageView({
               e.currentTarget.style.opacity = "1";
             }}
           >
-            {isVideoCall ? "Play Recording" : "Play Audio Recording"}
+            {/* {isVideoCall ? "Play Recording" : "Play Audio Recording"} */}
+            Play Recording
           </button>
         </div>
       )}
