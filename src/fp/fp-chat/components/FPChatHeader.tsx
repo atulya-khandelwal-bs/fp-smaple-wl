@@ -169,7 +169,7 @@ export default function FPChatHeader({
                     e.currentTarget.style.backgroundColor = "transparent";
                   }}
                 >
-                  <Video size={20} style={{ color: "#2563eb" }} />
+                  <Video size={20} style={{ color: "#000" }} />
                   <span>Video Call</span>
                 </button>
                 <button
@@ -195,7 +195,7 @@ export default function FPChatHeader({
                     e.currentTarget.style.backgroundColor = "transparent";
                   }}
                 >
-                  <Phone size={20} style={{ color: "#2563eb" }} />
+                  <Phone size={20} style={{ color: "#000" }} />
                   <span>Voice Call</span>
                 </button>
               </div>
