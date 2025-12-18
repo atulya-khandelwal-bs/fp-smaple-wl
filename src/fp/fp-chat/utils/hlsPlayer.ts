@@ -1,4 +1,4 @@
-import Hls from "hls.js";
+import Hls, { type ErrorData } from "hls.js";
 
 /**
  * Initialize HLS player for m3u8 video URLs
@@ -27,7 +27,7 @@ export const initializeHlsPlayer = (
     hls.attachMedia(videoElement);
 
     // Error handling
-    hls.on(Hls.Events.ERROR, (_event: string, data: Hls.ErrorData) => {
+    hls.on(Hls.Events.ERROR, (_event: string, data: ErrorData) => {
       if (data.fatal) {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
