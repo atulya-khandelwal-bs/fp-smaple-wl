@@ -27,7 +27,7 @@ export const initializeHlsPlayer = (
     hls.attachMedia(videoElement);
 
     // Error handling
-    hls.on(Hls.Events.ERROR, (_event, data) => {
+    hls.on(Hls.Events.ERROR, (_event: string, data: Hls.ErrorData) => {
       if (data.fatal) {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:

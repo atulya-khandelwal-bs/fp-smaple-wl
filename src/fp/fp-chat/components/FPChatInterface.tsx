@@ -15,7 +15,7 @@ import FPImageViewer from "./FPImageViewer";
 import FPVideoPlayer from "./FPVideoPlayer";
 import {
   formatMessage,
-  convertApiMessageToFormat,
+  // convertApiMessageToFormat,
   parseSystemPayload,
   getSystemLabel,
 } from "../utils/messageFormatters.ts";
@@ -51,19 +51,19 @@ interface AgoraMessage {
   [key: string]: unknown;
 }
 
-interface ApiMessage {
-  message_id?: string;
-  conversation_id?: string;
-  from_user?: string;
-  to_user?: string;
-  sender_name?: string;
-  sender_photo?: string;
-  message_type?: string;
-  body?: string | object;
-  created_at?: string | number;
-  created_at_ms?: number;
-  chat_type?: string;
-}
+// interface ApiMessage {
+//   message_id?: string;
+//   conversation_id?: string;
+//   from_user?: string;
+//   to_user?: string;
+//   sender_name?: string;
+//   sender_photo?: string;
+//   message_type?: string;
+//   body?: string | object;
+//   created_at?: string | number;
+//   created_at_ms?: number;
+//   chat_type?: string;
+// }
 import {
   Message,
   Contact,
