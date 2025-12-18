@@ -1,8 +1,7 @@
-import { useEffect, RefObject, KeyboardEvent } from "react";
+import React, { useEffect, RefObject, KeyboardEvent } from "react";
 import { Smile } from "lucide-react";
 import "emoji-picker-element";
 import { DraftAttachment, Contact } from "../../common/types/chat";
-import React from "react";
 
 interface FPMessageInputProps {
   message: string;
@@ -23,6 +22,7 @@ interface FPMessageInputProps {
   inputRef: RefObject<HTMLInputElement>;
   buttonRef: RefObject<HTMLButtonElement>;
   emojiPickerRef: RefObject<HTMLDivElement>;
+  isEditing?: boolean;
 }
 
 export default function FPMessageInput({
@@ -44,6 +44,7 @@ export default function FPMessageInput({
   inputRef,
   buttonRef,
   emojiPickerRef,
+  isEditing = false,
 }: FPMessageInputProps): React.JSX.Element {
   // Handle emoji selection and make navigation bar scrollable
   useEffect(() => {
@@ -109,7 +110,7 @@ export default function FPMessageInput({
             navElement.style.whiteSpace = "nowrap";
             navElement.style.display = "flex";
             navElement.style.scrollbarWidth = "thin";
-            (navElement.style as any).webkitOverflowScrolling = "touch";
+            navElement.style.setProperty("-webkit-overflow-scrolling", "touch");
             break; // Found and styled, exit
           }
         }
@@ -174,7 +175,9 @@ export default function FPMessageInput({
             type="text"
             key={`${peerId}-${inputResetKey}`} // Force remount when peer changes or after sending
             placeholder={
-              draftAttachment && draftAttachment.type === "audio"
+              isEditing
+                ? "Edit message"
+                : draftAttachment && draftAttachment.type === "audio"
                 ? "Add a caption (optional)"
                 : draftAttachment
                 ? "Add a caption (optional)"

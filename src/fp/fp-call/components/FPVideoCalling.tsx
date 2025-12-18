@@ -85,10 +85,20 @@ const FPVideoCallingInner = ({
   const extensionRef = useRef<VirtualBackgroundExtension | null>(null);
   const loadedImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
+  // Recorder UID constant - ignore all events for this user
+  const RECORDER_UID = 999999999;
+
   // Agora hooks
   const { localMicrophoneTrack } = useLocalMicrophoneTrack(micOn);
   const { localCameraTrack } = useLocalCameraTrack(cameraOn && !isAudioCall);
-  const remoteUsers = useRemoteUsers();
+  const allRemoteUsers = useRemoteUsers();
+
+  // Filter out recorder user (UID 999999999) - ignore all events for this user
+  const remoteUsers = allRemoteUsers.filter((user) => {
+    const userUid =
+      typeof user.uid === "string" ? parseInt(user.uid, 10) : user.uid;
+    return userUid !== RECORDER_UID;
+  });
 
   // Background options
   const backgroundOptions: BackgroundOption[] = [
@@ -205,7 +215,66 @@ const FPVideoCallingInner = ({
     }
   }, [isConnected]);
 
-  // Track if remote user ever joined
+  // Ignore all remote events for recorder (UID 999999999)
+  useEffect(() => {
+    if (!_client) return;
+
+    // Helper to check if UID is recorder
+    const isRecorder = (uid: string | number): boolean => {
+      const uidNum = typeof uid === "string" ? parseInt(uid, 10) : uid;
+      return uidNum === RECORDER_UID;
+    };
+
+    // Ignore user-joined event for recorder
+    const handleUserJoined = (user: { uid: string | number }): void => {
+      if (isRecorder(user.uid)) {
+        console.log("Ignoring recorder user join event (UID: 999999999)");
+        return;
+      }
+    };
+
+    // Ignore user-left event for recorder
+    const handleUserLeft = (user: { uid: string | number }): void => {
+      if (isRecorder(user.uid)) {
+        console.log("Ignoring recorder user leave event (UID: 999999999)");
+        return;
+      }
+    };
+
+    // Ignore user-published event for recorder (mute/unmute)
+    const handleUserPublished = (user: { uid: string | number }): void => {
+      if (isRecorder(user.uid)) {
+        console.log("Ignoring recorder user published event (UID: 999999999)");
+        return;
+      }
+    };
+
+    // Ignore user-unpublished event for recorder (mute/unmute)
+    const handleUserUnpublished = (user: { uid: string | number }): void => {
+      if (isRecorder(user.uid)) {
+        console.log(
+          "Ignoring recorder user unpublished event (UID: 999999999)"
+        );
+        return;
+      }
+    };
+
+    // Add event listeners
+    _client.on("user-joined", handleUserJoined);
+    _client.on("user-left", handleUserLeft);
+    _client.on("user-published", handleUserPublished);
+    _client.on("user-unpublished", handleUserUnpublished);
+
+    // Cleanup
+    return () => {
+      _client.off("user-joined", handleUserJoined);
+      _client.off("user-left", handleUserLeft);
+      _client.off("user-published", handleUserPublished);
+      _client.off("user-unpublished", handleUserUnpublished);
+    };
+  }, [_client]);
+
+  // Track if remote user ever joined (excluding recorder)
   useEffect(() => {
     if (remoteUsers.length > 0) {
       remoteUserEverJoinedRef.current = true;

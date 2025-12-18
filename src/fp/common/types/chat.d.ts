@@ -43,6 +43,7 @@ export interface Message {
   peerId?: string;
   callAction?: string;
   channel?: string;
+  isEdited?: boolean;
 }
 
 export interface MealPlanIconsDetails {
@@ -116,4 +117,5 @@ export interface CoachInfo {
 export interface LogEntry {
   log?: string;
   timestamp?: Date;
+  serverMsgId?: string; // Server message ID from Agora (for editing messages)
 }

@@ -22,7 +22,7 @@ export default function FPUserDetails({
   // All available products for suggestions
   const allProducts: Product[] = [
     {
-      id: "1",
+      id: "90909",
       title: "What's Up Wellness Sleep Gummies",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",
@@ -31,7 +31,7 @@ export default function FPUserDetails({
       image_url:
         "https://fpdevelopment19.s3.ap-south-1.amazonaws.com/demo/product_1000.jpg",
       action_id: "90909",
-      rediection_url: "https://google.com",
+      rediection_url: "",
       cta_details: {
         text: "",
         text_color: "",
@@ -39,7 +39,7 @@ export default function FPUserDetails({
       },
     },
     {
-      id: "2",
+      id: "90910",
       title: "Hello Healthy Coffee (South Indian)",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",
@@ -48,7 +48,7 @@ export default function FPUserDetails({
       image_url:
         "https://fpdevelopment19.s3.ap-south-1.amazonaws.com/demo/product_2000.jpg",
       action_id: "90910",
-      rediection_url: "https://google.com",
+      rediection_url: "",
       cta_details: {
         text: "",
         text_color: "",
@@ -56,7 +56,7 @@ export default function FPUserDetails({
       },
     },
     {
-      id: "3",
+      id: "90911",
       title: "Max Protein Bar",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",
@@ -73,7 +73,7 @@ export default function FPUserDetails({
       },
     },
     {
-      id: "4",
+      id: "90912",
       title: "Kikibix 100% Whole Grain Cookies",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",
@@ -90,7 +90,7 @@ export default function FPUserDetails({
       },
     },
     {
-      id: "5",
+      id: "90913",
       title: "Ginger Honey Tonic",
       description:
         "Formulated with Chamomile, Melatonin, L-Theanine, Tart Cherry, and Vitamin D2 to promote calmness and ensure sound, restful sleep. These sleep gummies work better than any other sleeping pills/sleeping tablets.",
@@ -382,14 +382,32 @@ export default function FPUserDetails({
       const payload = {
         action_type: "general-notification",
         title:
-          "Great news! Your dedicated Nutritionist, Sandeep, has been assigned!",
+          "Great news! Your <b>dedicated Nutritionist</b>, <i><b>Sandeep</b></i>, has been <s>assigned!</s>",
         description:
-          "What would you like to do next? You can either schedule a call or start chatting with right away. He is here to support you on your nutrition journey with FITPASS.",
+          "<b><i><u><s>What would you like to do next?You can either schedule a call or start chatting with right away. He is here to support you on your nutrition journey with FITPASS.</s></u></i></b>.",
         redirection_details: [
           {
             cta_details: {
-              text: "",
-              text_color: "Schedule Call",
+              text: "Nothing much but acording to your understanding",
+              text_color: "#000000",
+              bg_color: "#FFFFFF",
+            },
+            redirect_url: "fitfeast_call_history",
+            action_id: "4",
+          },
+          {
+            cta_details: {
+              text: "Chat",
+              text_color: "Chat",
+              bg_color: "",
+            },
+            redirect_url: "coach_details",
+            action_id: "4",
+          },
+          {
+            cta_details: {
+              text: "Schedule Call",
+              text_color: "",
               bg_color: "",
             },
             redirect_url: "fitfeast_call_history",
@@ -397,11 +415,11 @@ export default function FPUserDetails({
           },
           {
             cta_details: {
-              text: "",
-              text_color: "Chat",
+              text: "Schedule Call",
+              text_color: "",
               bg_color: "",
             },
-            redirect_url: "coach_details",
+            redirect_url: "fitfeast_call_history",
             action_id: "4",
           },
         ],
@@ -440,112 +458,112 @@ export default function FPUserDetails({
     }
   };
 
-  // Handle Video Call Message
-  const handleVideoCall = async (): Promise<void> => {
-    if (!peerId || !userId) {
-      console.error("Missing peerId or userId");
-      return;
-    }
+  // // Handle Video Call Message
+  // const handleVideoCall = async (): Promise<void> => {
+  //   if (!peerId || !userId) {
+  //     console.error("Missing peerId or userId");
+  //     return;
+  //   }
 
-    try {
-      const payload = {
-        title: "Video call",
-        description: "24 Min",
-        icons_details: {
-          left_icon: "",
-          right_icon: "",
-        },
-        call_details: {
-          call_url: "",
-        },
-        redirection_details: [],
-      };
+  //   try {
+  //     const payload = {
+  //       title: "Video call",
+  //       description: "24 Min",
+  //       icons_details: {
+  //         left_icon: "",
+  //         right_icon: "",
+  //       },
+  //       call_details: {
+  //         call_url: "",
+  //       },
+  //       redirection_details: [],
+  //     };
 
-      const body = {
-        from: userId,
-        to: peerId,
-        type: "video_call",
-        data: payload,
-      };
+  //     const body = {
+  //       from: userId,
+  //       to: peerId,
+  //       type: "video_call",
+  //       data: payload,
+  //     };
 
-      try {
-        const response = await axios.post(config.api.customMessage, body);
-        console.log("Video call message sent successfully:", response.data);
+  //     try {
+  //       const response = await axios.post(config.api.customMessage, body);
+  //       console.log("Video call message sent successfully:", response.data);
 
-        // Add message directly to logs for real-time display
-        if (addLog) {
-          const messageToLog = JSON.stringify({
-            type: "video_call",
-            ...payload,
-          });
-          addLog({
-            log: `You → ${peerId}: ${messageToLog}`,
-            timestamp: new Date(),
-          });
-        }
-      } catch (error) {
-        console.error("Error sending video call message:", error);
-      }
-    } catch (error) {
-      console.error("Error sending video call message:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error occurred";
-      alert(`Failed to send video call message: ${errorMessage}`);
-    }
-  };
+  //       // Add message directly to logs for real-time display
+  //       if (addLog) {
+  //         const messageToLog = JSON.stringify({
+  //           type: "video_call",
+  //           ...payload,
+  //         });
+  //         addLog({
+  //           log: `You → ${peerId}: ${messageToLog}`,
+  //           timestamp: new Date(),
+  //         });
+  //       }
+  //     } catch (error) {
+  //       console.error("Error sending video call message:", error);
+  //     }
+  //   } catch (error) {
+  //     console.error("Error sending video call message:", error);
+  //     const errorMessage =
+  //       error instanceof Error ? error.message : "Unknown error occurred";
+  //     alert(`Failed to send video call message: ${errorMessage}`);
+  //   }
+  // };
 
   // Handle Voice Call Message
-  const handleVoiceCall = async (): Promise<void> => {
-    if (!peerId || !userId) {
-      console.error("Missing peerId or userId");
-      return;
-    }
+  // const handleVoiceCall = async (): Promise<void> => {
+  //   if (!peerId || !userId) {
+  //     console.error("Missing peerId or userId");
+  //     return;
+  //   }
 
-    try {
-      const payload = {
-        title: "Voice call",
-        description: "24 Min",
-        icons_details: {
-          left_icon: "",
-          right_icon: "",
-        },
-        call_details: {
-          call_url: "",
-        },
-        redirection_details: [],
-      };
-      const body = {
-        from: userId,
-        to: peerId,
-        type: "voice_call",
-        data: payload,
-      };
+  //   try {
+  //     const payload = {
+  //       title: "Voice call",
+  //       description: "24 Min",
+  //       icons_details: {
+  //         left_icon: "",
+  //         right_icon: "",
+  //       },
+  //       call_details: {
+  //         call_url: "",
+  //       },
+  //       redirection_details: [],
+  //     };
+  //     const body = {
+  //       from: userId,
+  //       to: peerId,
+  //       type: "voice_call",
+  //       data: payload,
+  //     };
 
-      try {
-        const response = await axios.post(config.api.customMessage, body);
-        console.log("Voice call message sent successfully:", response.data);
+  //     try {
+  //       const response = await axios.post(config.api.customMessage, body);
+  //       console.log("Voice call message sent successfully:", response.data);
 
-        // Add message directly to logs for real-time display
-        if (addLog) {
-          const messageToLog = JSON.stringify({
-            type: "voice_call",
-            ...payload,
-          });
-          addLog({
-            log: `You → ${peerId}: ${messageToLog}`,
-            timestamp: new Date(),
-          });
-        }
-      } catch (error) {
-        console.error("Error sending voice call message:", error);
-      }
-    } catch (error) {
-      console.error("Error sending voice call message:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error occurred";
-      alert(`Failed to send voice call message: ${errorMessage}`);
-    }
-  };
+  //       // Add message directly to logs for real-time display
+  //       if (addLog) {
+  //         const messageToLog = JSON.stringify({
+  //           type: "voice_call",
+  //           ...payload,
+  //         });
+  //         addLog({
+  //           log: `You → ${peerId}: ${messageToLog}`,
+  //           timestamp: new Date(),
+  //         });
+  //       }
+  //     } catch (error) {
+  //       console.error("Error sending voice call message:", error);
+  //     }
+  //   } catch (error) {
+  //     console.error("Error sending voice call message:", error);
+  //     const errorMessage =
+  //       error instanceof Error ? error.message : "Unknown error occurred";
+  //     alert(`Failed to send voice call message: ${errorMessage}`);
+  //   }
+  // };
 
   // Handle Documents Message
   const handleDocuments = async (): Promise<void> => {
@@ -815,75 +833,6 @@ export default function FPUserDetails({
           >
             Send General Notification
           </button>
-          <div
-            style={{
-              display: "flex",
-              gap: "0.5rem",
-            }}
-          >
-            <button
-              onClick={handleVideoCall}
-              disabled={!selectedContact}
-              title="Send Video Call Message"
-              style={{
-                flex: 1,
-                padding: "0.5rem 0.75rem",
-                background: selectedContact ? "#f3f4f6" : "#f9fafb",
-                color: selectedContact ? "#374151" : "#9ca3af",
-                border: "1px solid #e5e7eb",
-                borderRadius: "6px",
-                cursor: selectedContact ? "pointer" : "not-allowed",
-                fontSize: "0.875rem",
-                fontWeight: 500,
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                if (selectedContact) {
-                  (e.target as HTMLButtonElement).style.background = "#e5e7eb";
-                  (e.target as HTMLButtonElement).style.borderColor = "#d1d5db";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (selectedContact) {
-                  (e.target as HTMLButtonElement).style.background = "#f3f4f6";
-                  (e.target as HTMLButtonElement).style.borderColor = "#e5e7eb";
-                }
-              }}
-            >
-              Send Video Call
-            </button>
-            <button
-              onClick={handleVoiceCall}
-              disabled={!selectedContact}
-              title="Send Voice Call Message"
-              style={{
-                flex: 1,
-                padding: "0.5rem 0.75rem",
-                background: selectedContact ? "#f3f4f6" : "#f9fafb",
-                color: selectedContact ? "#374151" : "#9ca3af",
-                border: "1px solid #e5e7eb",
-                borderRadius: "6px",
-                cursor: selectedContact ? "pointer" : "not-allowed",
-                fontSize: "0.875rem",
-                fontWeight: 500,
-                transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                if (selectedContact) {
-                  (e.target as HTMLButtonElement).style.background = "#e5e7eb";
-                  (e.target as HTMLButtonElement).style.borderColor = "#d1d5db";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (selectedContact) {
-                  (e.target as HTMLButtonElement).style.background = "#f3f4f6";
-                  (e.target as HTMLButtonElement).style.borderColor = "#e5e7eb";
-                }
-              }}
-            >
-              Send Voice Call
-            </button>
-          </div>
           <button
             onClick={handleDocuments}
             disabled={!selectedContact}

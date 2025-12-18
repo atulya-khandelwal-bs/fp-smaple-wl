@@ -31,6 +31,35 @@ interface MessageHandlersOptions {
 }
 
 /**
+ * Format date as "11 Aug 10:00 am" (no seconds, with AM/PM)
+ */
+function formatScheduledDate(date: Date): string {
+  const day = date.getDate();
+  const monthNames = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  const month = monthNames[date.getMonth()];
+  let hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm = hours >= 12 ? "pm" : "am";
+  hours = hours % 12;
+  hours = hours ? hours : 12; // the hour '0' should be '12'
+  const minutesStr = minutes < 10 ? `0${minutes}` : minutes;
+  return `${day} ${month} ${hours}:${minutesStr} ${ampm}`;
+}
+
+/**
  * Creates message event handlers for the chat client
  */
 export function createMessageHandlers({
@@ -126,8 +155,36 @@ export function createMessageHandlers({
           // Normalize the message structure for UI parsing (same as onCustomMessage)
           let normalizedData = paramsData;
 
-          // Handle API format with messageType and payload
+          // Handle case where customExts has a stringified 'data' field (e.g., from backend API)
+          // Example: { type: 'call_scheduled', data: '{"time":"1765953010","type":"call_scheduled"}' }
           if (
+            paramsData &&
+            typeof paramsData === "object" &&
+            "data" in paramsData &&
+            typeof paramsData.data === "string"
+          ) {
+            try {
+              const parsedData = JSON.parse(paramsData.data);
+              // Merge parsed data with the outer object, preserving type from outer if not in parsed
+              normalizedData = {
+                ...parsedData,
+                type: parsedData.type || (paramsData as { type?: string }).type,
+              };
+              console.log(
+                "✅ Parsed stringified data field (onTextMessage):",
+                JSON.stringify(normalizedData, null, 2)
+              );
+            } catch (parseError) {
+              console.warn(
+                "Failed to parse data field (onTextMessage):",
+                parseError,
+                paramsData.data
+              );
+              // Fall through to other normalization logic
+            }
+          }
+          // Handle API format with messageType and payload
+          else if (
             paramsData &&
             typeof paramsData === "object" &&
             "messageType" in paramsData &&
@@ -202,6 +259,20 @@ export function createMessageHandlers({
               t === "documents"
             )
               preview = paramsObj.title || "Message";
+            else if (t === "call_scheduled") {
+              const time = (paramsObj as { time?: number | string }).time;
+              if (time) {
+                const scheduledDate = new Date(
+                  typeof time === "number"
+                    ? time * 1000
+                    : parseInt(time, 10) * 1000
+                );
+                preview = `Schedule, ${formatScheduledDate(scheduledDate)}`;
+              } else {
+                preview = "Call scheduled";
+              }
+            } else if (t === "scheduled_call_canceled")
+              preview = "Scheduled call cancelled";
 
             // Ensure the logged message has 'type' field for UI parsing
             messageContent = JSON.stringify(normalizedData);
@@ -216,14 +287,39 @@ export function createMessageHandlers({
 
         addLog(`${msg.from}: ${messageContent}`);
 
-        // Update conversation
+        // Update conversation - normalize conversation ID matching
         if (msg.from) {
           const fromId = msg.from;
+          // Normalize: try both with and without user_ prefix
+          const normalizedFromId = fromId.startsWith("user_") ? fromId : `user_${fromId}`;
+          const normalizedFromIdWithoutPrefix = fromId.startsWith("user_") ? fromId.replace("user_", "") : fromId;
+          
+          console.log("🔄 [onTextMessage] Updating conversation preview:", {
+            fromId,
+            normalizedFromId,
+            normalizedFromIdWithoutPrefix,
+            preview,
+          });
+          
           setConversations((prev) => {
-            const existing = prev.find((c) => c.id === fromId);
+            // Find conversation by matching either format
+            const existing = prev.find((c) => 
+              c.id === fromId || 
+              c.id === normalizedFromId || 
+              c.id === normalizedFromIdWithoutPrefix ||
+              c.id === `user_${normalizedFromIdWithoutPrefix}`
+            );
+            
+            console.log("🔄 [onTextMessage] Conversation search result:", {
+              existing: existing ? { id: existing.id, lastMessage: existing.lastMessage } : null,
+              allConversationIds: prev.map(c => c.id),
+            });
+            
             if (existing) {
-              return prev.map((conv) =>
-                conv.id === fromId
+              // Use the existing conversation ID format
+              const conversationId = existing.id;
+              const updated = prev.map((conv) =>
+                conv.id === conversationId
                   ? {
                       ...conv,
                       lastMessage: preview,
@@ -232,20 +328,26 @@ export function createMessageHandlers({
                     }
                   : conv
               );
+              console.log("✅ [onTextMessage] Conversation updated:", {
+                conversationId,
+                newLastMessage: preview,
+                updatedConversation: updated.find(c => c.id === conversationId),
+              });
+              return updated;
             }
-            return [
-              {
-                id: fromId,
-                name: fromId,
-                lastMessage: preview,
-                timestamp: new Date(),
-                avatar: config.defaults.avatar,
-                replyCount: 0,
-                lastSeen: "",
-                lastMessageFrom: fromId,
-              },
-              ...prev,
-            ];
+            // Create new conversation - use normalized format with user_ prefix
+            const newConversation = {
+              id: normalizedFromId,
+              name: normalizedFromIdWithoutPrefix,
+              lastMessage: preview,
+              timestamp: new Date(),
+              avatar: config.defaults.avatar,
+              replyCount: 0,
+              lastSeen: "",
+              lastMessageFrom: fromId,
+            };
+            console.log("➕ [onTextMessage] Creating new conversation:", newConversation);
+            return [newConversation, ...prev];
           });
         }
         return; // Don't process as text message
@@ -379,6 +481,20 @@ export function createMessageHandlers({
               preview = (objTyped as { title?: string }).title || "Voice call";
             else if (t === "documents")
               preview = (objTyped as { title?: string }).title || "Document";
+            else if (t === "call_scheduled") {
+              const time = (objTyped as { time?: number | string }).time;
+              if (time) {
+                const scheduledDate = new Date(
+                  typeof time === "number"
+                    ? time * 1000
+                    : parseInt(time, 10) * 1000
+                );
+                preview = `Schedule, ${formatScheduledDate(scheduledDate)}`;
+              } else {
+                preview = "Call scheduled";
+              }
+            } else if (t === "scheduled_call_canceled")
+              preview = "Scheduled call cancelled";
             // If we successfully parsed and generated a preview, use it
             // Otherwise, preview remains as the original msg.msg
           }
@@ -392,14 +508,27 @@ export function createMessageHandlers({
       const messageToLog = normalizedMessageContent || msg.msg;
       addLog(`${msg.from}: ${messageToLog}`);
 
-      // Update conversation when receiving a message
+      // Update conversation when receiving a message - normalize conversation ID matching
       if (msg.from) {
         const fromId = msg.from;
+        // Normalize: try both with and without user_ prefix
+        const normalizedFromId = fromId.startsWith("user_") ? fromId : `user_${fromId}`;
+        const normalizedFromIdWithoutPrefix = fromId.startsWith("user_") ? fromId.replace("user_", "") : fromId;
+        
         setConversations((prev) => {
-          const existing = prev.find((c) => c.id === fromId);
+          // Find conversation by matching either format
+          const existing = prev.find((c) => 
+            c.id === fromId || 
+            c.id === normalizedFromId || 
+            c.id === normalizedFromIdWithoutPrefix ||
+            c.id === `user_${normalizedFromIdWithoutPrefix}`
+          );
+          
           if (existing) {
+            // Use the existing conversation ID format
+            const conversationId = existing.id;
             return prev.map((conv) =>
-              conv.id === fromId
+              conv.id === conversationId
                 ? {
                     ...conv,
                     lastMessage: preview,
@@ -409,11 +538,11 @@ export function createMessageHandlers({
                 : conv
             );
           }
-          // Create new conversation if doesn't exist
+          // Create new conversation - use normalized format with user_ prefix
           return [
             {
-              id: fromId,
-              name: fromId,
+              id: normalizedFromId,
+              name: normalizedFromIdWithoutPrefix,
               lastMessage: preview,
               timestamp: new Date(),
               avatar: config.defaults.avatar,
@@ -728,8 +857,36 @@ export function createMessageHandlers({
         // Normalize the message structure for UI parsing
         let normalizedData = paramsData;
 
-        // Handle API format with messageType and payload
+        // Handle case where customExts has a stringified 'data' field (e.g., from backend API)
+        // Example: { type: 'call_scheduled', data: '{"time":"1765953010","type":"call_scheduled"}' }
         if (
+          paramsData &&
+          typeof paramsData === "object" &&
+          "data" in paramsData &&
+          typeof paramsData.data === "string"
+        ) {
+          try {
+            const parsedData = JSON.parse(paramsData.data);
+            // Merge parsed data with the outer object, preserving type from outer if not in parsed
+            normalizedData = {
+              ...parsedData,
+              type: parsedData.type || (paramsData as { type?: string }).type,
+            };
+            console.log(
+              "✅ Parsed stringified data field:",
+              JSON.stringify(normalizedData, null, 2)
+            );
+          } catch (parseError) {
+            console.warn(
+              "Failed to parse data field:",
+              parseError,
+              paramsData.data
+            );
+            // Fall through to other normalization logic
+          }
+        }
+        // Handle API format with messageType and payload
+        else if (
           paramsData &&
           typeof paramsData === "object" &&
           "messageType" in paramsData &&
@@ -831,6 +988,20 @@ export function createMessageHandlers({
           else if (t === "voice_call")
             preview = paramsObj.title || "Voice call";
           else if (t === "documents") preview = paramsObj.title || "Document";
+          else if (t === "call_scheduled") {
+            const time = (paramsObj as { time?: number | string }).time;
+            if (time) {
+              const scheduledDate = new Date(
+                typeof time === "number"
+                  ? time * 1000
+                  : parseInt(time, 10) * 1000
+              );
+              preview = `Schedule, ${formatScheduledDate(scheduledDate)}`;
+            } else {
+              preview = "Call scheduled";
+            }
+          } else if (t === "scheduled_call_canceled")
+            preview = "Scheduled call cancelled";
 
           // Ensure the logged message has 'type' field for UI parsing
           messageContent = JSON.stringify(normalizedData);
@@ -864,14 +1035,27 @@ export function createMessageHandlers({
       console.log("Final messageContent to log (stringified):", messageContent);
       addLog(`${msg.from}: ${messageContent}`);
 
-      // Update conversation when receiving a custom message
+      // Update conversation when receiving a custom message - normalize conversation ID matching
       if (msg.from) {
         const fromId = msg.from;
+        // Normalize: try both with and without user_ prefix
+        const normalizedFromId = fromId.startsWith("user_") ? fromId : `user_${fromId}`;
+        const normalizedFromIdWithoutPrefix = fromId.startsWith("user_") ? fromId.replace("user_", "") : fromId;
+        
         setConversations((prev) => {
-          const existing = prev.find((c) => c.id === fromId);
+          // Find conversation by matching either format
+          const existing = prev.find((c) => 
+            c.id === fromId || 
+            c.id === normalizedFromId || 
+            c.id === normalizedFromIdWithoutPrefix ||
+            c.id === `user_${normalizedFromIdWithoutPrefix}`
+          );
+          
           if (existing) {
+            // Use the existing conversation ID format
+            const conversationId = existing.id;
             return prev.map((conv) =>
-              conv.id === fromId
+              conv.id === conversationId
                 ? {
                     ...conv,
                     lastMessage: preview,
@@ -881,11 +1065,11 @@ export function createMessageHandlers({
                 : conv
             );
           }
-          // Create new conversation if doesn't exist
+          // Create new conversation - use normalized format with user_ prefix
           return [
             {
-              id: fromId,
-              name: fromId,
+              id: normalizedFromId,
+              name: normalizedFromIdWithoutPrefix,
               lastMessage: preview,
               timestamp: new Date(),
               avatar: config.defaults.avatar,

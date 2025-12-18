@@ -47,7 +47,11 @@ interface MealPlanPayload {
 }
 
 interface NutritionistPayload {
-  type: "new_nutritionist" | "new_nutrionist" | "coach_assigned" | "coach_details";
+  type:
+    | "new_nutritionist"
+    | "new_nutrionist"
+    | "coach_assigned"
+    | "coach_details";
   id?: string;
   name?: string;
   title?: string;
@@ -94,6 +98,11 @@ interface DocumentsPayload {
   redirection_details?: MealPlanRedirectionDetail[];
 }
 
+interface CallScheduledPayload {
+  type: "call_scheduled" | "scheduled_call_canceled";
+  time: number; // Epoch time in seconds
+}
+
 type MessagePayload =
   | ImagePayload
   | AudioPayload
@@ -104,6 +113,7 @@ type MessagePayload =
   | CallPayload
   | GeneralNotificationPayload
   | DocumentsPayload
+  | CallScheduledPayload
   | { type: string; [key: string]: unknown };
 
 interface CustomExts {
@@ -172,8 +182,12 @@ export function buildCustomExts(
         action_type: mealPlanPayload.action_type || "meal_plan_update",
         title: mealPlanPayload.title || "",
         description: mealPlanPayload.description || "",
-        icons_details: mealPlanPayload.icons_details ? JSON.stringify(mealPlanPayload.icons_details) : undefined,
-        redirection_details: mealPlanPayload.redirection_details ? JSON.stringify(mealPlanPayload.redirection_details) : undefined,
+        icons_details: mealPlanPayload.icons_details
+          ? JSON.stringify(mealPlanPayload.icons_details)
+          : undefined,
+        redirection_details: mealPlanPayload.redirection_details
+          ? JSON.stringify(mealPlanPayload.redirection_details)
+          : undefined,
         id: mealPlanPayload.id || "",
       };
     }
@@ -185,16 +199,24 @@ export function buildCustomExts(
       const nutritionistPayload = payload as NutritionistPayload;
       // For coach_assigned/coach_details, preserve the original type and structure
       return {
-        type: nutritionistPayload.type === "coach_assigned" ? "coach_assigned" : 
-              nutritionistPayload.type === "coach_details" ? "coach_details" : 
-              "new_nutritionist",
+        type:
+          nutritionistPayload.type === "coach_assigned"
+            ? "coach_assigned"
+            : nutritionistPayload.type === "coach_details"
+            ? "coach_details"
+            : "new_nutritionist",
         id: nutritionistPayload.id || "",
         name: nutritionistPayload.name || "",
         title: nutritionistPayload.title || "",
-        profilePhoto: nutritionistPayload.profilePhoto || nutritionistPayload.icons_details?.left_icon || "",
+        profilePhoto:
+          nutritionistPayload.profilePhoto ||
+          nutritionistPayload.icons_details?.left_icon ||
+          "",
         description: nutritionistPayload.description || "",
         action_type: nutritionistPayload.action_type || "",
-        icons_details: nutritionistPayload.icons_details ? JSON.stringify(nutritionistPayload.icons_details) : undefined,
+        icons_details: nutritionistPayload.icons_details
+          ? JSON.stringify(nutritionistPayload.icons_details)
+          : undefined,
       };
     }
 
@@ -215,9 +237,15 @@ export function buildCustomExts(
         type: type, // "video_call" or "voice_call"
         title: callPayload.title || "",
         description: callPayload.description || "",
-        icons_details: callPayload.icons_details ? JSON.stringify(callPayload.icons_details) : undefined,
-        call_details: callPayload.call_details ? JSON.stringify(callPayload.call_details) : undefined,
-        redirection_details: callPayload.redirection_details ? JSON.stringify(callPayload.redirection_details) : undefined,
+        icons_details: callPayload.icons_details
+          ? JSON.stringify(callPayload.icons_details)
+          : undefined,
+        call_details: callPayload.call_details
+          ? JSON.stringify(callPayload.call_details)
+          : undefined,
+        redirection_details: callPayload.redirection_details
+          ? JSON.stringify(callPayload.redirection_details)
+          : undefined,
       };
     }
 
@@ -250,6 +278,15 @@ export function buildCustomExts(
         redirection_details: documentsPayload.redirection_details
           ? JSON.stringify(documentsPayload.redirection_details)
           : undefined,
+      };
+    }
+
+    case "call_scheduled":
+    case "scheduled_call_canceled": {
+      const callScheduledPayload = payload as CallScheduledPayload;
+      return {
+        type: type, // "call_scheduled" or "scheduled_call_canceled"
+        time: callScheduledPayload.time.toString(), // Convert to string for consistency
       };
     }
 

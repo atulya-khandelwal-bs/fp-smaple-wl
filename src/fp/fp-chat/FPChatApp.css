@@ -238,8 +238,7 @@ input {
 
 .conversation-panel {
   width: 20%;
-  min-width: 250px;
-  max-width: 300px;
+  /* min-width: 250px; */
   border-right: 1px solid var(--border);
   background: var(--bg);
   display: flex;
@@ -251,7 +250,7 @@ input {
 
 .chat-panel {
   width: 20%;
-  min-width: 300px;
+  /* min-width: 300px; */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -263,7 +262,7 @@ input {
 
 .user-details-panel-wrapper {
   width: 60%;
-  min-width: 400px;
+  /* min-width: 400px; */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1145,9 +1144,6 @@ input {
   position: relative;
 }
 
-.search-button-wrapper .header-icon-btn.active {
-}
-
 .search-input-container {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
@@ -1567,27 +1563,80 @@ input {
     display: none;
   }
 
+  .chat-interface {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
   .chat-header {
     display: flex;
     align-items: center;
     width: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    padding: 0.75rem 1rem;
+    min-height: 60px;
   }
 
   .chat-header .contact-info {
     flex: 1;
   }
 
-  .chat-interface {
-    width: 100%;
+  .nav-tabs {
+    position: fixed;
+    top: 60px; /* chat-header height */
+    left: 0;
+    right: 0;
+    z-index: 99;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
 
   .chat-area {
     width: 100%;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 1rem;
+    margin-top: 110px; /* chat-header (~60px) + nav-tabs (~50px) */
+    margin-bottom: 0;
+    padding-bottom: 90px; /* message-input-area height + extra padding */
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+  }
+
+  .chat-area::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Edge */
   }
 
   .message-input-area {
     width: 100%;
     box-sizing: border-box;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.1);
+    padding-bottom: env(
+      safe-area-inset-bottom,
+      0
+    ); /* For devices with notch/home indicator */
+    max-height: 200px; /* Prevent input area from taking too much space */
+    overflow-y: auto;
   }
 }
 
@@ -1752,6 +1801,7 @@ input {
   .chat-interface {
     max-width: 100%;
     height: 100%;
+    padding-bottom: 35px;
   }
 
   .media-popup {

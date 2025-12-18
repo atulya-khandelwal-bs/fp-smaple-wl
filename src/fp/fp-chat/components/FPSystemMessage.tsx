@@ -17,24 +17,15 @@ export default function FPSystemMessage({
   if (msg.system?.kind === "new_nutritionist") {
     const actionType = msg.system?.payload?.action_type as string | undefined;
 
-    console.log("🔍 [FPSystemMessage] Routing new_nutritionist message:", {
-      actionType,
-      payload: msg.system?.payload,
-      system: msg.system,
-    });
-
     if (actionType === "coach_assigned") {
-      console.log("✅ Using FPCoachAssignedView for coach_assigned");
       return <FPCoachAssignedView msg={msg} />;
     }
 
     if (actionType === "coach_details") {
-      console.log("✅ Using FPCoachDetailsView for coach_details");
       return <FPCoachDetailsView msg={msg} />;
     }
 
     // Fallback to coach_details if action_type is not specified
-    console.log("⚠️ No action_type found, falling back to FPCoachDetailsView");
     return <FPCoachDetailsView msg={msg} />;
   }
 

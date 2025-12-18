@@ -1,6 +1,6 @@
-import SealCheckIcon from "../../assets/SealCheck.svg";
 import { Message } from "../../../common/types/chat";
 import React from "react";
+import { validateImageUrl } from "../../utils/imageValidator";
 
 interface FPCoachDetailsViewProps {
   msg: Message;
@@ -27,9 +27,6 @@ export default function FPCoachDetailsView({
 
   // Get profile photo - prefer system.profilePhoto, then icons_details.left_icon
   const profilePhoto = msg.system?.profilePhoto || iconsDetails?.left_icon;
-
-  console.log("FPCoachDetailsViewPayload", payload);
-  console.log("FPCoachDetailsViewSystem", msg.system);
 
   return (
     <div
@@ -69,7 +66,14 @@ export default function FPCoachDetailsView({
               }>
             | undefined;
 
-          const redirectUrl = redirectionDetails?.[0]?.redirect_url;
+          const firstDetail = redirectionDetails?.[0];
+          const redirectUrl = firstDetail?.redirect_url;
+          const actionId = firstDetail?.action_id;
+
+          // Log action_id for callback/tracking purposes
+          if (actionId) {
+            console.log("Coach clicked - action_id:", actionId);
+          }
 
           if (redirectUrl) {
             if (
@@ -81,7 +85,10 @@ export default function FPCoachDetailsView({
               window.location.href = redirectUrl;
             }
           } else {
-            console.log("Coach clicked (no redirect URL):", msg.system);
+            console.log("Coach clicked (no redirect URL):", {
+              action_id: actionId,
+              system: msg.system,
+            });
           }
         }}
       >
@@ -99,7 +106,7 @@ export default function FPCoachDetailsView({
         >
           {profilePhoto ? (
             <img
-              src={profilePhoto}
+              src={validateImageUrl(profilePhoto, "avatar")}
               alt={coachName || "Coach"}
               style={{
                 width: "100%",
@@ -158,7 +165,7 @@ export default function FPCoachDetailsView({
             <span
               style={{
                 fontWeight: 700,
-                fontSize: "16px",
+                fontSize: "13px",
                 lineHeight: "1.2em",
                 color: "#0A1F34",
                 overflow: "hidden",
@@ -168,9 +175,13 @@ export default function FPCoachDetailsView({
             >
               {coachName}
             </span>
-            {/* Verified badge */}
+            {/* Verified badge - Default to SealCheck for coach details */}
             <img
-              src={SealCheckIcon}
+              src={validateImageUrl(
+                iconsDetails?.right_icon,
+                "icon",
+                "SealCheck"
+              )}
               alt="Verified"
               style={{
                 width: "16px",
@@ -181,7 +192,7 @@ export default function FPCoachDetailsView({
           </div>
           <span
             style={{
-              fontSize: "14px",
+              fontSize: "12px",
               lineHeight: "1.2em",
               color: "#6C7985",
               overflow: "hidden",

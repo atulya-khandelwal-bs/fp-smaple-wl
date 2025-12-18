@@ -4,6 +4,7 @@ import { ArrowUpDown } from "lucide-react";
 import { Search } from "lucide-react";
 import config from "../../common/config.ts";
 import { Contact } from "../../common/types/chat";
+import { formatTextWithTags } from "../utils/textFormatter";
 import React from "react";
 
 type SortOrder = "newest" | "oldest";
@@ -62,6 +63,33 @@ export default function FPConversationList({
       setNewContactName("");
       setShowAddForm(false);
     }
+  };
+
+  // Format date as "11 Aug 10:00 am" (no seconds, with AM/PM)
+  const formatScheduledDate = (date: Date): string => {
+    const day = date.getDate();
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    const month = monthNames[date.getMonth()];
+    let hours = date.getHours();
+    const minutes = date.getMinutes();
+    const ampm = hours >= 12 ? "pm" : "am";
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    const minutesStr = minutes < 10 ? `0${minutes}` : minutes;
+    return `${day} ${month} ${hours}:${minutesStr} ${ampm}`;
   };
 
   // Helper function to generate preview from lastMessage (handles both string and object formats)
@@ -132,6 +160,19 @@ export default function FPConversationList({
         return (parsedObj as { title?: string }).title || "Voice call";
       if (t === "documents")
         return (parsedObj as { title?: string }).title || "Document";
+      if (t === "call_scheduled") {
+        const time = (parsedObj as { time?: number | string }).time;
+        if (time) {
+          const scheduledDate = new Date(
+            typeof time === "number" ? time * 1000 : parseInt(time, 10) * 1000
+          );
+          return `Schedule, ${formatScheduledDate(scheduledDate)}`;
+        }
+        return "Call scheduled";
+      }
+      if (t === "scheduled_call_canceled") {
+        return "Scheduled call cancelled";
+      }
       if (t === "text") {
         // API uses "message" field for text messages
         return parsedObj.message || parsedObj.body || "";
@@ -485,8 +526,41 @@ export default function FPConversationList({
                   <div className="conversation-name">{conv.name}</div>
                   <div className="conversation-preview">
                     {conv.lastMessage
-                      ? generatePreviewFromLastMessage(conv.lastMessage) ||
-                        "No messages yet"
+                      ? (() => {
+                          const preview = generatePreviewFromLastMessage(
+                            conv.lastMessage
+                          );
+                          if (!preview) return "No messages yet";
+
+                          // Check if this is a general notification with HTML tags
+                          let parsed: { type?: string; title?: string } | null =
+                            null;
+                          try {
+                            if (typeof conv.lastMessage === "string") {
+                              parsed = JSON.parse(conv.lastMessage);
+                            } else if (typeof conv.lastMessage === "object") {
+                              parsed = conv.lastMessage as {
+                                type?: string;
+                                title?: string;
+                              };
+                            }
+                          } catch {
+                            // Not JSON, ignore
+                          }
+
+                          const isGeneralNotification =
+                            parsed &&
+                            typeof parsed === "object" &&
+                            (parsed.type === "general_notification" ||
+                              parsed.type === "general-notification");
+
+                          // If it's a general notification, format HTML tags
+                          if (isGeneralNotification && parsed && parsed.title) {
+                            return formatTextWithTags(parsed.title);
+                          }
+
+                          return preview;
+                        })()
                       : "No messages yet"}
                   </div>
                 </div>

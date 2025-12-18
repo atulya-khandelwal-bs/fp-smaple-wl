@@ -9,6 +9,7 @@ import {
 
 interface AgoraMessage {
   id?: string;
+  mid?: string; // Message ID from delivery receipt (used for editing)
   from?: string;
   to?: string;
   time?: number;
@@ -60,6 +61,7 @@ interface CustomMessageData {
   name?: string;
   title?: string;
   profilePhoto?: string;
+  time?: number | string; // Epoch time in seconds (for call_scheduled/scheduled_call_canceled)
   [key: string]: unknown;
 }
 
@@ -127,24 +129,110 @@ export const extractCustomMessageData = (
 
   // Try customExts at top level
   if (msg.customExts && typeof msg.customExts === "object") {
-    paramsData = msg.customExts;
+    const customExts = msg.customExts as {
+      type?: string;
+      data?: string | object;
+      [key: string]: unknown;
+    };
+
+    // If customExts has a 'data' field that's a JSON string, parse it
+    if (customExts.data) {
+      try {
+        paramsData =
+          typeof customExts.data === "string"
+            ? JSON.parse(customExts.data)
+            : customExts.data;
+        // If type is in customExts but not in parsed data, add it
+        if (customExts.type && !paramsData.type) {
+          paramsData = { ...paramsData, type: customExts.type };
+        }
+      } catch {
+        // If parsing fails, use customExts directly
+        paramsData = customExts;
+      }
+    } else {
+      // No data field, use customExts directly
+      paramsData = customExts;
+    }
   }
   // Try v2:customExts at top level
   else if (msg["v2:customExts"] && typeof msg["v2:customExts"] === "object") {
-    paramsData = msg["v2:customExts"];
+    const v2CustomExts = msg["v2:customExts"] as {
+      type?: string;
+      data?: string | object;
+      [key: string]: unknown;
+    };
+
+    // If v2:customExts has a 'data' field that's a JSON string, parse it
+    if (v2CustomExts.data) {
+      try {
+        paramsData =
+          typeof v2CustomExts.data === "string"
+            ? JSON.parse(v2CustomExts.data)
+            : v2CustomExts.data;
+        // If type is in v2CustomExts but not in parsed data, add it
+        if (v2CustomExts.type && !paramsData.type) {
+          paramsData = { ...paramsData, type: v2CustomExts.type };
+        }
+      } catch {
+        // If parsing fails, use v2CustomExts directly
+        paramsData = v2CustomExts;
+      }
+    } else {
+      // No data field, use v2CustomExts directly
+      paramsData = v2CustomExts;
+    }
   }
   // Try body.customExts
   else if (msg.body && typeof msg.body === "object") {
     const bodyObj = msg.body as {
-      customExts?: object;
-      "v2:customExts"?: object;
+      customExts?: {
+        type?: string;
+        data?: string | object;
+        [key: string]: unknown;
+      };
+      "v2:customExts"?: {
+        type?: string;
+        data?: string | object;
+        [key: string]: unknown;
+      };
     };
     if (bodyObj.customExts) {
-      paramsData = bodyObj.customExts;
+      const customExts = bodyObj.customExts;
+      if (customExts.data) {
+        try {
+          paramsData =
+            typeof customExts.data === "string"
+              ? JSON.parse(customExts.data)
+              : customExts.data;
+          if (customExts.type && !paramsData.type) {
+            paramsData = { ...paramsData, type: customExts.type };
+          }
+        } catch {
+          paramsData = customExts;
+        }
+      } else {
+        paramsData = customExts;
+      }
     }
     // Try body.v2:customExts
     else if (bodyObj["v2:customExts"]) {
-      paramsData = bodyObj["v2:customExts"];
+      const v2CustomExts = bodyObj["v2:customExts"];
+      if (v2CustomExts.data) {
+        try {
+          paramsData =
+            typeof v2CustomExts.data === "string"
+              ? JSON.parse(v2CustomExts.data)
+              : v2CustomExts.data;
+          if (v2CustomExts.type && !paramsData.type) {
+            paramsData = { ...paramsData, type: v2CustomExts.type };
+          }
+        } catch {
+          paramsData = v2CustomExts;
+        }
+      } else {
+        paramsData = v2CustomExts;
+      }
     }
   }
   // Try ext properties directly
@@ -431,6 +519,14 @@ export const formatMessage = (
   if (agoraMsg.type === "custom") {
     const customData = extractCustomMessageData(agoraMsg);
 
+    console.log("🔍 [formatMessage] Extracted custom data:", {
+      messageId: agoraMsg.id,
+      customData: customData,
+      customExts: agoraMsg.customExts,
+      v2CustomExts: agoraMsg["v2:customExts"],
+      ext: agoraMsg.ext,
+    });
+
     if (customData && customData.type) {
       const type = String(customData.type).toLowerCase();
 
@@ -500,7 +596,33 @@ export const formatMessage = (
             call_url?: string;
           };
           redirection_details?: MealPlanRedirectionDetail[];
+          // Also check for action_type format (from Agora messages)
+          action_type?: string;
         };
+
+        // Extract call_details - it should be in callPayload.call_details
+        let finalCallDetails = callPayload.call_details;
+
+        // If call_details is not directly available, check if it's nested differently
+        if (!finalCallDetails) {
+          // Try to find call_details in the payload
+          const payload = callPayload as Record<string, unknown>;
+          if (
+            payload.call_details &&
+            typeof payload.call_details === "object"
+          ) {
+            finalCallDetails = payload.call_details as { call_url?: string };
+          }
+        }
+
+        console.log("📞 [formatMessage] Processing call message:", {
+          type,
+          callPayload,
+          call_details: finalCallDetails,
+          call_url: finalCallDetails?.call_url,
+          hasCallDetails: !!finalCallDetails,
+          fullPayload: callPayload,
+        });
 
         return {
           ...baseMessage,
@@ -515,7 +637,7 @@ export const formatMessage = (
               title: callPayload.title,
               description: callPayload.description,
               icons_details: callPayload.icons_details,
-              call_details: callPayload.call_details,
+              call_details: finalCallDetails,
               redirection_details: callPayload.redirection_details,
             } as SystemMessageData["payload"] & {
               title?: string;
@@ -573,6 +695,66 @@ export const formatMessage = (
           fileName: documentsPayload.title,
           fileMime: documentsPayload.documents_details?.document_type,
           fileSizeBytes: documentsPayload.documents_details?.document_size,
+        };
+      } else if (
+        type === "call_scheduled" ||
+        type === "scheduled_call_canceled"
+      ) {
+        const callScheduledData = customData as {
+          time?: number | string;
+        };
+
+        console.log("📅 [formatMessage] Processing call_scheduled message:", {
+          type,
+          callScheduledData,
+          time: callScheduledData.time,
+        });
+
+        // Parse time - handle both string and number formats
+        let scheduledTime: number | undefined;
+        if (callScheduledData.time !== undefined) {
+          scheduledTime =
+            typeof callScheduledData.time === "number"
+              ? callScheduledData.time
+              : typeof callScheduledData.time === "string"
+              ? parseInt(callScheduledData.time, 10)
+              : undefined;
+        }
+
+        console.log("📅 [formatMessage] Parsed scheduled time:", {
+          originalTime: callScheduledData.time,
+          scheduledTime,
+          scheduledDate: scheduledTime
+            ? new Date(scheduledTime * 1000).toISOString()
+            : null,
+        });
+
+        // Format the scheduled time for display
+        const scheduledDate = scheduledTime
+          ? new Date(scheduledTime * 1000) // Convert seconds to milliseconds
+          : null;
+
+        const isCancelled = type === "scheduled_call_canceled";
+        const displayText = isCancelled
+          ? "Scheduled call cancelled"
+          : scheduledDate
+          ? `Schedule ${scheduledDate.toLocaleString()}`
+          : "Call scheduled";
+
+        return {
+          ...baseMessage,
+          content: displayText,
+          messageType: type, // "call_scheduled" or "scheduled_call_canceled"
+          system: {
+            kind: type,
+            payload: {
+              time: scheduledTime,
+              scheduledDate: scheduledDate?.toISOString(),
+            } as SystemMessageData["payload"] & {
+              time?: number;
+              scheduledDate?: string;
+            },
+          },
         };
       } else if (type === "products" || type === "recommended_products") {
         // Handle case where products might be a stringified JSON string
@@ -651,6 +833,7 @@ export const formatMessage = (
           action_type?: string;
           description?: string;
           icons_details?: MealPlanIconsDetails;
+          redirection_details?: MealPlanRedirectionDetail[] | string;
         };
 
         // For coach_assigned/coach_details, extract from title/description/icons_details
@@ -661,6 +844,23 @@ export const formatMessage = (
           nutritionistData.profilePhoto ||
           nutritionistData.icons_details?.left_icon ||
           "";
+
+        // Parse redirection_details if it's a string
+        let redirectionDetails: MealPlanRedirectionDetail[] | undefined;
+        if (nutritionistData.redirection_details) {
+          if (typeof nutritionistData.redirection_details === "string") {
+            try {
+              redirectionDetails = JSON.parse(
+                nutritionistData.redirection_details
+              );
+            } catch {
+              // If parsing fails, keep as undefined
+              redirectionDetails = undefined;
+            }
+          } else if (Array.isArray(nutritionistData.redirection_details)) {
+            redirectionDetails = nutritionistData.redirection_details;
+          }
+        }
 
         return {
           ...baseMessage,
@@ -680,7 +880,10 @@ export const formatMessage = (
                   : type === "coach_details"
                   ? "coach_details"
                   : undefined),
+              title: nutritionistData.title || title,
+              description: nutritionistData.description || "",
               icons_details: nutritionistData.icons_details,
+              redirection_details: redirectionDetails,
             },
           },
         };

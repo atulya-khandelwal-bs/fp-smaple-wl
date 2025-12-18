@@ -1,5 +1,4 @@
-import { RefObject } from "react";
-import React from "react";
+import React, { RefObject } from "react";
 
 interface FPAudioMessageViewProps {
   audioUrl: string;
@@ -23,7 +22,7 @@ export default function FPAudioMessageView({
       <audio
         controls
         src={audioUrl}
-        style={{ width: 240 }}
+        style={{ width: 210 }}
         onPlay={(e) => {
           // Pause the previously playing audio if any
           if (

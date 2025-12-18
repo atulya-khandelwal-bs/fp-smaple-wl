@@ -1,6 +1,6 @@
-import ForkKnifeIcon from "../../assets/ForkKnife.svg";
 import { Message } from "../../../common/types/chat";
 import React from "react";
+import { validateImageUrl } from "../../utils/imageValidator";
 
 interface FPMealPlanUpdatedViewProps {
   msg: Message;
@@ -82,47 +82,29 @@ export default function FPMealPlanUpdatedView({
         }}
         onClick={redirectUrl ? handleClick : undefined}
       >
-        {/* Left Icon */}
-        {iconsDetails?.left_icon ? (
-          <img
-            src={iconsDetails.left_icon}
-            alt="Left icon"
-            style={{
-              width: "16px",
-              height: "16px",
-              flexShrink: 0,
-            }}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <img
-            src={ForkKnifeIcon}
-            alt="Fork and knife"
-            style={{
-              width: "16px",
-              height: "16px",
-              flexShrink: 0,
-            }}
-          />
-        )}
+        {/* Left Icon - Default to ForkKnife for meal plan messages */}
+        <img
+          src={validateImageUrl(iconsDetails?.left_icon, "icon", "ForkKnife")}
+          alt="Left icon"
+          style={{
+            width: "16px",
+            height: "16px",
+            flexShrink: 0,
+          }}
+        />
 
         {/* Title/Content */}
         <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{title}</span>
 
-        {/* Right Icon */}
+        {/* Right Icon - Default to ForkKnife for meal plan messages */}
         {iconsDetails?.right_icon ? (
           <img
-            src={iconsDetails.right_icon}
+            src={validateImageUrl(iconsDetails.right_icon, "icon", "ForkKnife")}
             alt="Right icon"
             style={{
               width: "16px",
               height: "16px",
               flexShrink: 0,
-            }}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
             }}
           />
         ) : (

@@ -1,6 +1,6 @@
-import UserCheckIcon from "../../assets/UserCheck.svg";
 import { Message } from "../../../common/types/chat";
 import React from "react";
+import { validateImageUrl } from "../../utils/imageValidator";
 
 interface FPCoachAssignedViewProps {
   msg: Message;
@@ -31,10 +31,17 @@ export default function FPCoachAssignedView({
       }>
     | undefined;
 
-  // Get first redirect URL if available
-  const redirectUrl = redirectionDetails?.[0]?.redirect_url;
+  // Get first redirect detail if available
+  const firstDetail = redirectionDetails?.[0];
+  const redirectUrl = firstDetail?.redirect_url;
+  const actionId = firstDetail?.action_id;
 
   const handleClick = (): void => {
+    // Log action_id for callback/tracking purposes
+    if (actionId) {
+      console.log("Coach assigned clicked - action_id:", actionId);
+    }
+
     if (redirectUrl) {
       if (
         redirectUrl.startsWith("http://") ||
@@ -86,31 +93,16 @@ export default function FPCoachAssignedView({
         }}
         onClick={redirectUrl ? handleClick : undefined}
       >
-        {/* Left Icon */}
-        {iconsDetails?.left_icon ? (
-          <img
-            src={iconsDetails.left_icon}
-            alt="Left icon"
-            style={{
-              width: "16px",
-              height: "16px",
-              flexShrink: 0,
-            }}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <img
-            src={UserCheckIcon}
-            alt="User check"
-            style={{
-              width: "16px",
-              height: "16px",
-              flexShrink: 0,
-            }}
-          />
-        )}
+        {/* Left Icon - Default to UserCheck for coach assigned messages */}
+        <img
+          src={validateImageUrl(iconsDetails?.left_icon, "icon", "UserCheck")}
+          alt="Left icon"
+          style={{
+            width: "16px",
+            height: "16px",
+            flexShrink: 0,
+          }}
+        />
         <span
           style={{
             fontWeight: 600,
@@ -121,18 +113,15 @@ export default function FPCoachAssignedView({
         >
           {title}
         </span>
-        {/* Right Icon */}
+        {/* Right Icon - Default to UserCheck for coach assigned messages */}
         {iconsDetails?.right_icon && (
           <img
-            src={iconsDetails.right_icon}
+            src={validateImageUrl(iconsDetails.right_icon, "icon", "UserCheck")}
             alt="Right icon"
             style={{
               width: "16px",
               height: "16px",
               flexShrink: 0,
-            }}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
             }}
           />
         )}

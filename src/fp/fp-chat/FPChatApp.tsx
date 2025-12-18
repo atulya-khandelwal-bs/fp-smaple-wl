@@ -429,6 +429,21 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
               return (parsedObj as { title?: string }).title || "Voice call";
             if (t === "documents")
               return (parsedObj as { title?: string }).title || "Document";
+            if (t === "call_scheduled") {
+              const time = (parsedObj as { time?: number | string }).time;
+              if (time) {
+                const scheduledDate = new Date(
+                  typeof time === "number"
+                    ? time * 1000
+                    : parseInt(time, 10) * 1000
+                );
+                return `Schedule ${scheduledDate.toLocaleString()}`;
+              }
+              return "Call scheduled";
+            }
+            if (t === "scheduled_call_canceled") {
+              return "Scheduled call cancelled";
+            }
             if (t === "text") {
               // API uses "message" field for text messages
               return parsedObj.message || parsedObj.body || "";
@@ -611,9 +626,12 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       const newToken = await ensureToken();
       if (!newToken) {
         addLog("Failed to generate token. Cannot connect to chat.");
+        console.log("Failed to generate token. Cannot connect to chat.");
         return;
       }
     }
+
+    console.log("🔵 [USER SELECTION] Token:", token);
 
     // Register the user if not already registered
     await registerUser(contact.id);
@@ -686,9 +704,12 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       return;
     }
 
-    // Generate channel name using format: fp_rtc_call_user_USER_ID
-    // USER_ID is the user's ID (peerId), not the coach's ID
-    const channel = `fp_rtc_call_user_${peerId}`;
+    // Generate channel name using format: fp_rtc_call_CALLTYPE_USERID_DIETITIANID
+    // CALLTYPE => video or voice
+    // USERID => userId (the user's ID)
+    // DIETITIANID => peerId (the dietitian/coach ID)
+    const callTypeStr = callType === "video" ? "video" : "voice";
+    const channel = `fp_rtc_call_${callTypeStr}_${peerId}_${userId}`;
 
     // Reset call end message sent flag for new call
     callEndMessageSentRef.current = false;
@@ -812,10 +833,14 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     }
 
     try {
-      // Send call end message with duration
+      // Determine message type and title based on call type
+      const isVideoCall = activeCall.callType === "video";
+      const messageType = isVideoCall ? "video_call" : "voice_call";
+      const callTitle = isVideoCall ? "Video call" : "Voice call";
 
+      // Send call end message with duration
       const payload = {
-        title: "Video call",
+        title: callTitle,
         description: `${formatDurationFromSeconds(duration)}`,
         icons_details: {
           left_icon: "",
@@ -830,18 +855,21 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       const body = {
         from: userId,
         to: peerId,
-        type: "video_call",
+        type: messageType,
         data: payload,
       };
 
       try {
         const response = await axios.post(config.api.customMessage, body);
-        console.log("Video call message sent successfully:", response.data);
+        console.log(`${callTitle} message sent successfully:`, response.data);
+
+        // Mark call end message as sent to prevent duplicates
+        callEndMessageSentRef.current = true;
 
         // Add message directly to logs for real-time display
         if (addLog) {
           const messageToLog = JSON.stringify({
-            type: "video_call",
+            type: messageType,
             ...payload,
           });
           addLog({
@@ -850,10 +878,13 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
           });
         }
       } catch (error) {
-        console.error("Error sending video call message:", error);
+        console.error(
+          `Error sending ${callTitle.toLowerCase()} message:`,
+          error
+        );
       }
 
-      addLog(`Call ended. Duration: ${duration}s`);
+      addLog(`${callTitle} ended. Duration: ${duration}s`);
     } catch (error) {
       console.error("Error sending call end message:", error);
       const errorMessage =
@@ -898,6 +929,15 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
         formattedMsg.fileName ||
         "Document"
       );
+    } else if (formattedMsg.messageType === "call_scheduled") {
+      const time = formattedMsg.system?.payload?.time as number | undefined;
+      if (time) {
+        const scheduledDate = new Date(time * 1000); // Convert seconds to milliseconds
+        return `Schedule ${scheduledDate.toLocaleString()}`;
+      }
+      return "Call scheduled";
+    } else if (formattedMsg.messageType === "scheduled_call_canceled") {
+      return "Scheduled call cancelled";
     } else if (formattedMsg.messageType === "text") {
       // For text messages, try to parse if it's JSON (custom message)
       try {
@@ -949,30 +989,100 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       : new Date();
     const lastMessageFrom = formattedMsg.sender || peerId;
 
-    setConversations((prev) =>
-      prev.map((conv) => {
-        if (conv.id !== peerId) return conv;
+    // Normalize: try both with and without user_ prefix
+    const normalizedPeerId = peerId.startsWith("user_")
+      ? peerId
+      : `user_${peerId}`;
+    const normalizedPeerIdWithoutPrefix = peerId.startsWith("user_")
+      ? peerId.replace("user_", "")
+      : peerId;
+
+    console.log(
+      "🔄 [updateLastMessageFromHistory] Updating conversation preview:",
+      {
+        peerId,
+        normalizedPeerId,
+        normalizedPeerIdWithoutPrefix,
+        preview,
+        timestamp: timestamp.toISOString(),
+        lastMessageFrom,
+      }
+    );
+
+    setConversations((prev) => {
+      // Find conversation by matching either format
+      const existing = prev.find(
+        (c) =>
+          c.id === peerId ||
+          c.id === normalizedPeerId ||
+          c.id === normalizedPeerIdWithoutPrefix ||
+          c.id === `user_${normalizedPeerIdWithoutPrefix}`
+      );
+
+      console.log(
+        "🔄 [updateLastMessageFromHistory] Conversation search result:",
+        {
+          existing: existing
+            ? { id: existing.id, lastMessage: existing.lastMessage }
+            : null,
+          allConversationIds: prev.map((c) => c.id),
+        }
+      );
+
+      if (existing) {
+        // Use the existing conversation ID format
+        const conversationId = existing.id;
 
         // Only update if history message is more recent than existing last message
         // or if there's no existing last message
-        const existingTimestamp = conv.timestamp
-          ? new Date(conv.timestamp)
+        const existingTimestamp = existing.timestamp
+          ? new Date(existing.timestamp)
           : null;
         const shouldUpdate =
           !existingTimestamp ||
           timestamp.getTime() >= existingTimestamp.getTime();
 
+        console.log("🔄 [updateLastMessageFromHistory] Update check:", {
+          conversationId,
+          shouldUpdate,
+          existingTimestamp: existingTimestamp?.toISOString(),
+          newTimestamp: timestamp.toISOString(),
+          timestampComparison: existingTimestamp
+            ? timestamp.getTime() >= existingTimestamp.getTime()
+            : "no existing timestamp",
+        });
+
         if (shouldUpdate) {
-          return {
-            ...conv,
-            lastMessage: preview,
-            timestamp: timestamp,
-            lastMessageFrom: lastMessageFrom,
-          };
+          const updated = prev.map((conv) => {
+            if (conv.id !== conversationId) return conv;
+            return {
+              ...conv,
+              lastMessage: preview,
+              timestamp: timestamp,
+              lastMessageFrom: lastMessageFrom,
+            };
+          });
+          console.log(
+            "✅ [updateLastMessageFromHistory] Conversation updated:",
+            {
+              conversationId,
+              newLastMessage: preview,
+              updatedConversation: updated.find((c) => c.id === conversationId),
+            }
+          );
+          return updated;
+        } else {
+          console.log(
+            "⚠️ [updateLastMessageFromHistory] Not updating - message is not more recent"
+          );
         }
-        return conv;
-      })
-    );
+      } else {
+        console.warn(
+          "⚠️ [updateLastMessageFromHistory] Conversation not found, cannot update preview"
+        );
+      }
+      return prev;
+    });
   };
 
   const handleSendMessage = async (
@@ -1130,11 +1240,33 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
           }
         ).send === "function"
       ) {
-        await (
+        const response = await (
           clientRef.current as unknown as {
-            send: (msg: unknown) => Promise<void>;
+            send: (msg: unknown) => Promise<{ serverMsgId?: string }>;
           }
         ).send(msg);
+        console.log("Response", response);
+
+        // Capture serverMsgId from response for message editing
+        const serverMsgId = (response as { serverMsgId?: string })?.serverMsgId;
+        if (serverMsgId) {
+          console.log(
+            "✅ [handleSendMessage] Server message ID received:",
+            serverMsgId
+          );
+          // Add serverMsgId to the log entry so it can be used when creating messages
+          addLog({
+            log: `You → ${peerId}: ${messageString}`,
+            timestamp: new Date(),
+            serverMsgId: serverMsgId, // Store serverMsgId with the log
+          });
+        } else {
+          // Fallback: add log without serverMsgId if not available
+          // Log already added above with serverMsgId if available
+        }
+      } else {
+        // If send failed, still add to log
+        addLog(`You → ${peerId}: ${messageString}`);
       }
       console.log("Message sent successfully", msg);
 
@@ -1174,23 +1306,79 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
           preview = (parsedPayload.title as string) || "Voice call";
         else if (t === "documents")
           preview = (parsedPayload.title as string) || "Document";
+        else if (t === "call_scheduled") {
+          const time = parsedPayload.time as number | undefined;
+          if (time) {
+            const scheduledDate = new Date(time * 1000); // Convert seconds to milliseconds
+            preview = `Schedule ${scheduledDate.toLocaleString()}`;
+          } else {
+            preview = "Call scheduled";
+          }
+        } else if (t === "scheduled_call_canceled")
+          preview = "Scheduled call cancelled";
       }
 
-      addLog(`You → ${peerId}: ${messageString}`);
+      // Note: Log is already added above with serverMsgId if available from send response
 
-      // Update conversation with last message
-      setConversations((prev) =>
-        prev.map((conv) =>
-          conv.id === peerId
-            ? {
-                ...conv,
-                lastMessage: preview,
-                timestamp: new Date(),
-                lastMessageFrom: userId, // Current user sent the last message
-              }
-            : conv
-        )
-      );
+      // Update conversation with last message - normalize conversation ID matching
+      // Normalize: try both with and without user_ prefix
+      const normalizedPeerId = peerId.startsWith("user_")
+        ? peerId
+        : `user_${peerId}`;
+      const normalizedPeerIdWithoutPrefix = peerId.startsWith("user_")
+        ? peerId.replace("user_", "")
+        : peerId;
+
+      console.log("📤 [handleSendMessage] Updating conversation preview:", {
+        peerId,
+        normalizedPeerId,
+        normalizedPeerIdWithoutPrefix,
+        preview,
+      });
+
+      setConversations((prev) => {
+        // Find conversation by matching either format
+        const existing = prev.find(
+          (c) =>
+            c.id === peerId ||
+            c.id === normalizedPeerId ||
+            c.id === normalizedPeerIdWithoutPrefix ||
+            c.id === `user_${normalizedPeerIdWithoutPrefix}`
+        );
+
+        console.log("📤 [handleSendMessage] Conversation search result:", {
+          existing: existing
+            ? { id: existing.id, lastMessage: existing.lastMessage }
+            : null,
+          allConversationIds: prev.map((c) => c.id),
+        });
+
+        if (existing) {
+          // Use the existing conversation ID format
+          const conversationId = existing.id;
+          const updated = prev.map((conv) =>
+            conv.id === conversationId
+              ? {
+                  ...conv,
+                  lastMessage: preview,
+                  timestamp: new Date(),
+                  lastMessageFrom: userId, // Current user sent the last message
+                }
+              : conv
+          );
+          console.log("✅ [handleSendMessage] Conversation updated:", {
+            conversationId,
+            newLastMessage: preview,
+            updatedConversation: updated.find((c) => c.id === conversationId),
+          });
+          return updated;
+        }
+        // If conversation doesn't exist, create it (shouldn't happen, but handle gracefully)
+        console.warn(
+          "⚠️ [handleSendMessage] Conversation not found, cannot update preview"
+        );
+        return prev;
+      });
 
       // Force a small delay to ensure state update propagates
       await new Promise((resolve) => setTimeout(resolve, 0));

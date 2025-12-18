@@ -1,5 +1,6 @@
 import React from "react";
 import { Video, Phone } from "lucide-react";
+import { validateImageUrl } from "../../utils/imageValidator";
 
 interface FPCallMessageViewProps {
   callType: "video_call" | "voice_call";
@@ -21,6 +22,7 @@ interface FPCallMessageViewProps {
     redirect_url?: string;
     action_id?: string;
   }>;
+  onPlayVideo?: (videoUrl: string) => void;
 }
 
 export default function FPCallMessageView({
@@ -28,25 +30,19 @@ export default function FPCallMessageView({
   title,
   description,
   icons_details,
-  redirection_details,
+  call_details,
+  onPlayVideo,
 }: FPCallMessageViewProps): React.JSX.Element {
   const isVideoCall = callType === "video_call";
   const displayTitle = title || (isVideoCall ? "Video call" : "Voice call");
   const displayDescription = description || "";
 
-  // Get first redirect URL if available
-  const redirectUrl = redirection_details?.[0]?.redirect_url;
+  const videoUrl = call_details?.call_url;
 
-  const handleClick = (): void => {
-    if (redirectUrl) {
-      if (
-        redirectUrl.startsWith("http://") ||
-        redirectUrl.startsWith("https://")
-      ) {
-        window.open(redirectUrl, "_blank", "noopener,noreferrer");
-      } else {
-        window.location.href = redirectUrl;
-      }
+  const handlePlayVideo = (e: React.MouseEvent): void => {
+    e.stopPropagation(); // Prevent triggering the parent onClick
+    if (videoUrl && onPlayVideo) {
+      onPlayVideo(videoUrl);
     }
   };
 
@@ -55,99 +51,127 @@ export default function FPCallMessageView({
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: "8px",
         width: "100%",
-        cursor: redirectUrl ? "pointer" : "default",
+        borderRadius: "8px",
+        overflow: "hidden",
+        background: "#f3f4f6",
+        // border: "1px solid #e5e7eb",
       }}
-      onClick={redirectUrl ? handleClick : undefined}
     >
-      {/* Title and Icon Row */}
+      {/* Top Section: Icon, Title, and Duration */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "8px",
+          gap: "12px",
+          padding: "12px",
         }}
       >
-        {/* Left Icon */}
-        {icons_details?.left_icon ? (
-          <img
-            src={icons_details.left_icon}
-            alt="Call icon"
-            style={{
-              width: "18px",
-              height: "18px",
-              flexShrink: 0,
-            }}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <div style={{ flexShrink: 0 }}>
-            {isVideoCall ? (
-              <Video
-                size={18}
-                style={{
-                  color: "#2563eb",
-                }}
-              />
-            ) : (
-              <Phone
-                size={18}
-                style={{
-                  color: "#2563eb",
-                }}
-              />
-            )}
-          </div>
-        )}
-
-        {/* Title */}
-        <span
-          style={{
-            fontWeight: 600,
-            color: "var(--text)",
-            fontSize: "14px",
-          }}
-        >
-          {displayTitle}
-        </span>
-      </div>
-
-      {/* Description (Duration) */}
-      {displayDescription && (
+        {/* Icon with circular background */}
         <div
           style={{
-            fontSize: "12px",
-            color: "#6b7280",
-            marginLeft: "26px", // Align with title after icon
+            width: "40px",
+            height: "40px",
+            borderRadius: "50%",
+            background: "#ffffff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
           }}
         >
-          {displayDescription}
+          {icons_details?.left_icon ? (
+            <img
+              src={validateImageUrl(icons_details.left_icon, "icon")}
+              alt="Call icon"
+              style={{
+                width: "20px",
+                height: "20px",
+              }}
+            />
+          ) : (
+            <div>
+              {isVideoCall ? (
+                <Video
+                  size={20}
+                  style={{
+                    color: "",
+                  }}
+                />
+              ) : (
+                <Phone
+                  size={20}
+                  style={{
+                    color: "",
+                  }}
+                />
+              )}
+            </div>
+          )}
         </div>
-      )}
 
-      {/* Right Icon (if provided) */}
-      {icons_details?.right_icon && (
+        {/* Title and Duration */}
         <div
           style={{
             display: "flex",
-            justifyContent: "flex-end",
-            marginTop: "4px",
+            flexDirection: "column",
+            gap: "4px",
+            flex: 1,
           }}
         >
-          <img
-            src={icons_details.right_icon}
-            alt="Right icon"
+          <span
             style={{
-              width: "18px",
-              height: "18px",
+              fontWeight: 600,
+              color: "#111827",
+              fontSize: "14px",
             }}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
+          >
+            {displayTitle}
+          </span>
+          {displayDescription && (
+            <span
+              style={{
+                fontSize: "12px",
+                color: "#6b7280",
+              }}
+            >
+              {displayDescription}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Section: Play Recording Button - Show for both video and voice calls if URL exists */}
+      {videoUrl && onPlayVideo && (
+        <div
+          style={{
+            background: "#e5e7eb",
+            padding: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <button
+            onClick={handlePlayVideo}
+            style={{
+              background: "transparent",
+              border: "none",
+              fontSize: "14px",
+              fontWeight: 500,
+              cursor: "pointer",
+              padding: 0,
+              transition: "opacity 0.2s",
             }}
-          />
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = "0.8";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = "1";
+            }}
+          >
+            {isVideoCall ? "Play Recording" : "Play Audio Recording"}
+          </button>
         </div>
       )}
     </div>

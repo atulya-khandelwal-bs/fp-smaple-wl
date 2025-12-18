@@ -1,5 +1,6 @@
 import React from "react";
 import { Download } from "lucide-react";
+import { validateImageUrl } from "../../utils/imageValidator";
 
 interface FPFileMessageViewProps {
   fileUrl?: string;
@@ -135,15 +136,12 @@ export default function FPFileMessageView({
           {/* Left Icon */}
           {icons_details?.left_icon ? (
             <img
-              src={icons_details.left_icon}
+              src={validateImageUrl(icons_details.left_icon, "icon")}
               alt="Left icon"
               style={{
                 width: "18px",
                 height: "18px",
                 flexShrink: 0,
-              }}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
               }}
             />
           ) : null}

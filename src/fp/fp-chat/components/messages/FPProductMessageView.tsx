@@ -202,51 +202,185 @@ export default function FPProductMessageView({
                     )}
                   </div>
 
-                  {/* Redirect Arrow Button - Right */}
-                  <button
-                    style={{
-                      width: "24px",
-                      height: "24px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                      flexShrink: 0,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Handle redirect - navigate to product URL
-                      if (p.rediection_url) {
-                        window.open(
-                          p.rediection_url,
-                          "_blank",
-                          "noopener,noreferrer"
-                        );
+                  {/* CTA Button or Arrow - Right */}
+                  {p.cta_details?.text ||
+                  (p.cta_details?.text_color &&
+                    (!p.cta_details?.text ||
+                      p.cta_details.text.trim() === "")) ? (
+                    (() => {
+                      // Button text: use text if available and not empty, otherwise use text_color as fallback
+                      const buttonText =
+                        p.cta_details?.text && p.cta_details.text.trim() !== ""
+                          ? p.cta_details.text
+                          : p.cta_details?.text_color || "View";
+
+                      // Background color: use bg_color from cta_details with fallback
+                      const bgColor = p.cta_details?.bg_color || "#2563eb";
+
+                      // Text color logic:
+                      // - If text exists and is not empty: text_color is the actual text color
+                      // - If text doesn't exist or is empty: text_color is the button label, so determine text color based on background
+                      let textColor = "#FFFFFF"; // Default
+
+                      if (
+                        p.cta_details?.text &&
+                        p.cta_details.text.trim() !== ""
+                      ) {
+                        // text exists and is not empty, so text_color is the actual text color
+                        textColor = p.cta_details.text_color || "#FFFFFF";
                       } else {
-                        console.log("Redirect clicked (no URL):", p);
+                        // text doesn't exist or is empty, text_color is the button label
+                        // Determine text color based on background brightness
+                        const isLightBackground =
+                          !bgColor ||
+                          bgColor === "" ||
+                          bgColor === "#FFFFFF" ||
+                          bgColor === "#FFF" ||
+                          bgColor.toLowerCase() === "white";
+                        textColor = isLightBackground ? "#000000" : "#FFFFFF";
                       }
-                    }}
-                    aria-label="View product details"
-                  >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
+
+                      // Calculate hover color (darker shade of bg_color)
+                      const getHoverColor = (color: string): string => {
+                        if (
+                          !color ||
+                          color === "" ||
+                          color === "#FFFFFF" ||
+                          color === "#FFF" ||
+                          color.toLowerCase() === "white"
+                        ) {
+                          return "#e5e7eb"; // Light gray hover for white/empty buttons
+                        }
+                        // Convert hex to RGB and darken by 10%
+                        try {
+                          const hex = color.replace("#", "");
+                          if (
+                            hex.length === 6 &&
+                            /^[0-9A-Fa-f]{6}$/.test(hex)
+                          ) {
+                            const r = parseInt(hex.substring(0, 2), 16);
+                            const g = parseInt(hex.substring(2, 4), 16);
+                            const b = parseInt(hex.substring(4, 6), 16);
+                            const darken = (val: number) =>
+                              Math.max(0, Math.floor(val * 0.9));
+                            return `rgb(${darken(r)}, ${darken(g)}, ${darken(
+                              b
+                            )})`;
+                          }
+                        } catch {
+                          // If parsing fails, return default
+                        }
+                        return "#0d7a0d"; // Default hover color
+                      };
+
+                      const hoverColor = getHoverColor(bgColor);
+
+                      return (
+                        <button
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: "6px",
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: "12px",
+                            fontWeight: 500,
+                            background: bgColor,
+                            color: textColor,
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                            transition: "all 0.2s",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            display: "-webkit-box",
+                            WebkitLineClamp: 1,
+                            WebkitBoxOrient: "vertical" as const,
+                            lineHeight: "1.4",
+                            wordBreak: "break-word",
+                            minWidth: 0,
+                            maxHeight: "none",
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Handle redirect - navigate to product URL
+                            if (p.rediection_url) {
+                              if (
+                                p.rediection_url.startsWith("http://") ||
+                                p.rediection_url.startsWith("https://")
+                              ) {
+                                window.open(
+                                  p.rediection_url,
+                                  "_blank",
+                                  "noopener,noreferrer"
+                                );
+                              } else {
+                                window.location.href = p.rediection_url;
+                              }
+                            } else {
+                              console.log("CTA clicked (no URL):", p);
+                            }
+                          }}
+                          onMouseEnter={(e) => {
+                            (
+                              e.currentTarget as HTMLButtonElement
+                            ).style.background = hoverColor;
+                          }}
+                          onMouseLeave={(e) => {
+                            (
+                              e.currentTarget as HTMLButtonElement
+                            ).style.background = bgColor;
+                          }}
+                          aria-label={buttonText}
+                        >
+                          {buttonText}
+                        </button>
+                      );
+                    })()
+                  ) : (
+                    <button
+                      style={{
+                        width: "24px",
+                        height: "24px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: 0,
+                        flexShrink: 0,
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Handle redirect - navigate to product URL
+                        if (p.rediection_url) {
+                          window.open(
+                            p.rediection_url,
+                            "_blank",
+                            "noopener,noreferrer"
+                          );
+                        } else {
+                          console.log("Redirect clicked (no URL):", p);
+                        }
+                      }}
+                      aria-label="View product details"
                     >
-                      <path
-                        d="M6 4L10 8L6 12"
-                        stroke="#232534"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </button>
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M6 4L10 8L6 12"
+                          stroke="#232534"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
