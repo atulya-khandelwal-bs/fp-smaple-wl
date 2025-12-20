@@ -17,6 +17,10 @@ import { FPVideoCallingProps, BackgroundOption } from "../../common/types/call";
 interface FPVideoCallingInnerProps extends FPVideoCallingProps {
   client: IAgoraRTCClient;
   peerPresenceStatus?: "offline" | "waiting" | "in_call" | null;
+  localUserName?: string;
+  localUserPhoto?: string;
+  peerName?: string;
+  peerAvatar?: string;
 }
 
 // Inner component that uses Agora hooks - must be wrapped by AgoraRTCProvider
@@ -29,6 +33,10 @@ const FPVideoCallingInner = ({
   isAudioCall = false,
   client: _client,
   peerPresenceStatus,
+  localUserName,
+  localUserPhoto,
+  peerName,
+  peerAvatar,
 }: FPVideoCallingInnerProps): React.JSX.Element => {
   // State management
   const [calling, setCalling] = useState<boolean>(false);
@@ -83,7 +91,9 @@ const FPVideoCallingInner = ({
     pipe?: (processor: unknown) => unknown;
   } | null>(null);
   const extensionRef = useRef<VirtualBackgroundExtension | null>(null);
-  const loadedImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const loadedImagesRef = useRef<Map<string, HTMLImageElement>>(
+    new Map()
+  ); /*  */
 
   // Recorder UID constant - ignore all events for this user
   const RECORDER_UID = 999999999;
@@ -93,12 +103,94 @@ const FPVideoCallingInner = ({
   const { localCameraTrack } = useLocalCameraTrack(cameraOn && !isAudioCall);
   const allRemoteUsers = useRemoteUsers();
 
+  // Helper function to stop MediaStreamTrack (system device)
+  const stopMediaStreamTrack = (
+    track: {
+      getMediaStreamTrack?: () => MediaStreamTrack | null;
+      getTrack?: () => MediaStreamTrack | null;
+    } | null,
+    trackName: string
+  ): void => {
+    if (!track) return;
+
+    try {
+      // Get the underlying MediaStreamTrack
+      let mediaStreamTrack: MediaStreamTrack | null = null;
+      if (typeof track.getMediaStreamTrack === "function") {
+        mediaStreamTrack = track.getMediaStreamTrack();
+      } else if (typeof track.getTrack === "function") {
+        mediaStreamTrack = track.getTrack();
+      } else if ("track" in track && track.track instanceof MediaStreamTrack) {
+        mediaStreamTrack = track.track as MediaStreamTrack;
+      }
+
+      // Stop the MediaStreamTrack to turn off system device
+      if (mediaStreamTrack && mediaStreamTrack.readyState !== "ended") {
+        mediaStreamTrack.stop();
+        console.log(`🛑 Stopped ${trackName} MediaStreamTrack (system device)`);
+      }
+    } catch (error) {
+      console.warn(`Error stopping ${trackName} MediaStreamTrack:`, error);
+    }
+  };
+
   // Filter out recorder user (UID 999999999) - ignore all events for this user
   const remoteUsers = allRemoteUsers.filter((user) => {
     const userUid =
       typeof user.uid === "string" ? parseInt(user.uid, 10) : user.uid;
     return userUid !== RECORDER_UID;
   });
+
+  // Log all connected users details
+  useEffect(() => {
+    if (isConnected && calling) {
+      const localUserDetails = {
+        userId: userId,
+        uid: typeof uid === "number" ? uid : parseInt(String(uid), 10),
+        name: localUserName || userId,
+        photo: localUserPhoto || null,
+        hasAudio: localMicrophoneTrack ? true : false,
+        hasVideo: localCameraTrack ? true : false,
+        micOn: micOn,
+        cameraOn: cameraOn,
+        isLocal: true,
+      };
+
+      const remoteUsersDetails = remoteUsers.map((user) => ({
+        uid:
+          typeof user.uid === "number"
+            ? user.uid
+            : parseInt(String(user.uid), 10),
+        hasAudio: user.hasAudio || false,
+        hasVideo: user.hasVideo || false,
+        audioTrack: user.audioTrack ? "present" : "absent",
+        videoTrack: user.videoTrack ? "present" : "absent",
+        isLocal: false,
+      }));
+
+      console.log("📞 === CALL CONNECTION DETAILS ===");
+      console.log("Local User:", localUserDetails);
+      console.log("Remote Users:", remoteUsersDetails);
+      console.log("Total Users in Call:", 1 + remoteUsers.length);
+      console.log("Channel:", channel);
+      console.log("Is Connected:", isConnected);
+      console.log("Calling State:", calling);
+      console.log("===================================");
+    }
+  }, [
+    isConnected,
+    calling,
+    userId,
+    uid,
+    localUserName,
+    localUserPhoto,
+    localMicrophoneTrack,
+    localCameraTrack,
+    micOn,
+    cameraOn,
+    remoteUsers,
+    channel,
+  ]);
 
   // Background options
   const backgroundOptions: BackgroundOption[] = [
@@ -214,6 +306,65 @@ const FPVideoCallingInner = ({
       console.log("Call started at:", new Date(callStartTimeRef.current));
     }
   }, [isConnected]);
+
+  // Track previous calling state to detect call end
+  const prevCallingRef = useRef<boolean>(calling);
+
+  // Stop system camera and mic when call ends (calling becomes false)
+  useEffect(() => {
+    // When calling changes from true to false, stop the system devices
+    if (prevCallingRef.current && !calling) {
+      console.log(
+        "🛑 Call ended (calling=false), stopping system camera and microphone"
+      );
+      stopMediaStreamTrack(localCameraTrack, "camera");
+      stopMediaStreamTrack(localMicrophoneTrack, "microphone");
+
+      // Also close the Agora tracks to fully release resources
+      try {
+        if (localCameraTrack && typeof localCameraTrack.close === "function") {
+          localCameraTrack.close();
+          console.log("🛑 Closed camera Agora track");
+        }
+        if (
+          localMicrophoneTrack &&
+          typeof localMicrophoneTrack.close === "function"
+        ) {
+          localMicrophoneTrack.close();
+          console.log("🛑 Closed microphone Agora track");
+        }
+      } catch (error) {
+        console.warn("Error closing tracks:", error);
+      }
+    }
+    prevCallingRef.current = calling;
+  }, [calling, localCameraTrack, localMicrophoneTrack]);
+
+  // Cleanup on component unmount - stop all tracks
+  useEffect(() => {
+    return () => {
+      console.log(
+        "🛑 Component unmounting, stopping system camera and microphone"
+      );
+      stopMediaStreamTrack(localCameraTrack, "camera");
+      stopMediaStreamTrack(localMicrophoneTrack, "microphone");
+
+      // Also close the Agora tracks
+      try {
+        if (localCameraTrack && typeof localCameraTrack.close === "function") {
+          localCameraTrack.close();
+        }
+        if (
+          localMicrophoneTrack &&
+          typeof localMicrophoneTrack.close === "function"
+        ) {
+          localMicrophoneTrack.close();
+        }
+      } catch (error) {
+        console.warn("Error closing tracks on unmount:", error);
+      }
+    };
+  }, [localCameraTrack, localMicrophoneTrack]);
 
   // Ignore all remote events for recorder (UID 999999999)
   useEffect(() => {
@@ -657,6 +808,28 @@ const FPVideoCallingInner = ({
   };
 
   const handleEndCall = (): void => {
+    // Stop system camera and mic when call ends
+    console.log("🛑 Call ending, stopping system camera and microphone");
+    stopMediaStreamTrack(localCameraTrack, "camera");
+    stopMediaStreamTrack(localMicrophoneTrack, "microphone");
+
+    // Also close the Agora tracks to fully release resources
+    try {
+      if (localCameraTrack && typeof localCameraTrack.close === "function") {
+        localCameraTrack.close();
+        console.log("🛑 Closed camera Agora track");
+      }
+      if (
+        localMicrophoneTrack &&
+        typeof localMicrophoneTrack.close === "function"
+      ) {
+        localMicrophoneTrack.close();
+        console.log("🛑 Closed microphone Agora track");
+      }
+    } catch (error) {
+      console.warn("Error closing tracks:", error);
+    }
+
     if (calling && onEndCall) {
       const callEndTime = Date.now();
       const callStartTime = callStartTimeRef.current;
@@ -739,6 +912,12 @@ const FPVideoCallingInner = ({
         isAudioCall={isAudioCall}
         onEndCall={handleEndCall}
         peerPresenceStatus={peerPresenceStatus}
+        // User info
+        localUserId={userId}
+        localUserName={localUserName}
+        localUserPhoto={localUserPhoto}
+        peerName={peerName}
+        peerAvatar={peerAvatar}
       />
     </div>
   );
@@ -753,6 +932,10 @@ export const FPVideoCalling = ({
   onEndCall,
   isAudioCall = false,
   peerPresenceStatus,
+  localUserName,
+  localUserPhoto,
+  peerName,
+  peerAvatar,
 }: FPVideoCallingProps): React.JSX.Element => {
   // Create Agora client
   const client = AgoraRTC.createClient({
@@ -771,6 +954,10 @@ export const FPVideoCalling = ({
         isAudioCall={isAudioCall}
         client={client}
         peerPresenceStatus={peerPresenceStatus}
+        localUserName={localUserName}
+        localUserPhoto={localUserPhoto}
+        peerName={peerName}
+        peerAvatar={peerAvatar}
       />
     </AgoraRTCProvider>
   );

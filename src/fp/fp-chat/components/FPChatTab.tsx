@@ -13,8 +13,10 @@ interface FPChatTabProps {
   formatCurrency: (amount: number) => string;
   openImageViewer: (url: string, alt?: string) => void;
   currentlyPlayingAudioRef: RefObject<HTMLAudioElement | null>;
-  onEdit?: (messageId: string, content: string) => void;
-  onPlayVideo?: (videoUrl: string) => void;
+  onPlayVideo?: (
+    videoUrl: string,
+    callType?: "video_call" | "voice_call"
+  ) => void;
 }
 
 export default function FPChatTab({
@@ -26,7 +28,6 @@ export default function FPChatTab({
   formatCurrency,
   openImageViewer,
   currentlyPlayingAudioRef,
-  onEdit,
   onPlayVideo,
 }: FPChatTabProps): React.JSX.Element {
   return (
@@ -80,7 +81,6 @@ export default function FPChatTab({
                   openImageViewer={openImageViewer}
                   currentlyPlayingAudioRef={currentlyPlayingAudioRef}
                   formatCurrency={formatCurrency}
-                  onEdit={onEdit}
                   onPlayVideo={onPlayVideo}
                 />
               );

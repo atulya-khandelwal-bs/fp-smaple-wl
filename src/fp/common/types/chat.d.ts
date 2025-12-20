@@ -110,7 +110,7 @@ export interface DraftAttachment {
 }
 
 export interface CoachInfo {
-  name: string;
+  coachName: string;
   profilePhoto: string;
 }
 

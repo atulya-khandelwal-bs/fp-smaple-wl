@@ -1,4 +1,4 @@
-import { RefObject, useState, useRef } from "react";
+import { RefObject } from "react";
 import FPImageMessageView from "./messages/FPImageMessageView";
 import FPAudioMessageView from "./messages/FPAudioMessageView";
 import FPFileMessageView from "./messages/FPFileMessageView";
@@ -9,7 +9,6 @@ import FPGeneralNotificationView from "./messages/FPGeneralNotificationView";
 import FPCallScheduledView from "./messages/FPCallScheduledView";
 import { Message, Contact } from "../../common/types/chat";
 import React from "react";
-import { Edit2 } from "lucide-react";
 
 interface FPMessageBubbleProps {
   msg: Message;
@@ -18,8 +17,10 @@ interface FPMessageBubbleProps {
   openImageViewer: (url: string, alt?: string) => void;
   currentlyPlayingAudioRef: RefObject<HTMLAudioElement | null>;
   formatCurrency: (amount: number) => string;
-  onEdit?: (messageId: string, content: string) => void;
-  onPlayVideo?: (videoUrl: string) => void;
+  onPlayVideo?: (
+    videoUrl: string,
+    callType?: "video_call" | "voice_call"
+  ) => void;
 }
 
 export default function FPMessageBubble({
@@ -29,7 +30,6 @@ export default function FPMessageBubble({
   openImageViewer,
   currentlyPlayingAudioRef,
   formatCurrency,
-  onEdit,
   onPlayVideo,
 }: FPMessageBubbleProps): React.JSX.Element {
   const renderMessageContent = (): React.JSX.Element => {
@@ -118,6 +118,7 @@ export default function FPMessageBubble({
         <FPProductMessageView
           products={msg.products}
           formatCurrency={formatCurrency}
+          isIncoming={msg.isIncoming}
         />
       );
     }
@@ -362,207 +363,21 @@ export default function FPMessageBubble({
     return <FPTextMessageView content={msg.content} />;
   };
 
-  // Check if message is within 10-minute edit window
-  const isWithinEditWindow = (): boolean => {
-    if (!msg.createdAt) {
-      return false; // Can't determine age, don't allow editing
-    }
-    const messageTime =
-      msg.createdAt instanceof Date
-        ? msg.createdAt.getTime()
-        : new Date(msg.createdAt).getTime();
-    const currentTime = Date.now();
-    const tenMinutesInMs = 10 * 60 * 1000; // 10 minutes in milliseconds
-    return currentTime - messageTime <= tenMinutesInMs;
-  };
-
-  // Check if this is an editable text message (outgoing and text type)
-  const isEditableTextMessage =
-    !msg.isIncoming &&
-    (msg.messageType === "text" || !msg.messageType) &&
-    typeof msg.content === "string" &&
-    onEdit &&
-    isWithinEditWindow();
-
-  // Get the content string for editing
-  const getContentString = (): string => {
-    if (typeof msg.content === "string") {
-      return msg.content;
-    }
-    if (typeof msg.content === "object" && msg.content !== null) {
-      return (
-        (msg.content as { body?: string }).body || JSON.stringify(msg.content)
-      );
-    }
-    return String(msg.content || "");
-  };
-
-  // State for showing edit button on hover/tap
-  const [showEditButton, setShowEditButton] = useState(false);
-  const messageBubbleRef = useRef<HTMLDivElement | null>(null);
-  const isTouchDeviceRef = useRef<boolean>(false);
-
-  // Detect if device supports touch
-  React.useEffect(() => {
-    isTouchDeviceRef.current =
-      "ontouchstart" in window ||
-      navigator.maxTouchPoints > 0 ||
-      // @ts-expect-error - msMaxTouchPoints is IE-specific
-      navigator.msMaxTouchPoints > 0;
-  }, []);
-
-  // Hide edit button when clicking outside (for mobile)
-  React.useEffect(() => {
-    if (!showEditButton || !isTouchDeviceRef.current) return;
-
-    const handleClickOutside = (event: MouseEvent | TouchEvent): void => {
-      if (
-        messageBubbleRef.current &&
-        !messageBubbleRef.current.contains(event.target as Node)
-      ) {
-        setShowEditButton(false);
-      }
-    };
-
-    // Use both mouse and touch events
-    document.addEventListener("click", handleClickOutside, true);
-    document.addEventListener("touchend", handleClickOutside, true);
-
-    return () => {
-      document.removeEventListener("click", handleClickOutside, true);
-      document.removeEventListener("touchend", handleClickOutside, true);
-    };
-  }, [showEditButton]);
-
-  // Handle tap/click for mobile - toggle edit button on tap
-  const handleClick = (e: React.MouseEvent): void => {
-    if (!isEditableTextMessage) return;
-    // Only toggle on tap for touch devices, not on desktop click
-    // Don't toggle if clicking on the edit button itself
-    const target = e.target as HTMLElement;
-    if (target.closest(".message-edit-button")) {
-      return; // Don't toggle when clicking the edit button
-    }
-    if (isTouchDeviceRef.current) {
-      e.stopPropagation();
-      setShowEditButton((prev) => !prev); // Toggle on tap
-    }
-  };
-
-  // Handle touch for mobile - toggle edit button on tap
-  const handleTouchEnd = (e: React.TouchEvent): void => {
-    if (!isEditableTextMessage) return;
-    // Don't toggle if tapping on the edit button itself
-    const target = e.target as HTMLElement;
-    if (target.closest(".message-edit-button")) {
-      return; // Don't toggle when tapping the edit button
-    }
-    e.stopPropagation();
-    setShowEditButton((prev) => !prev); // Toggle on tap
-  };
-
-  // Handle hover for desktop
-  const handleMouseEnter = (): void => {
-    if (isEditableTextMessage && !isTouchDeviceRef.current) {
-      setShowEditButton(true);
-    }
-  };
-
-  const handleMouseLeave = (): void => {
-    if (!isTouchDeviceRef.current) {
-      setShowEditButton(false);
-    }
-  };
-
   return (
     <div
       className={`message-wrapper ${msg.isIncoming ? "incoming" : "outgoing"}`}
     >
-      {/* Avatar before message for incoming */}
-      {msg.isIncoming && (
-        <div className="message-avatar">
-          <img src={msg.avatar || ""} alt={msg.sender} />
-        </div>
-      )}
       <div className="message-content">
         {msg.label && !msg.isIncoming && (
           <div className="message-label">{msg.label}</div>
         )}
         <div
           className="message-bubble"
-          ref={messageBubbleRef}
           style={{
             position: "relative",
-            cursor:
-              isEditableTextMessage && isTouchDeviceRef.current
-                ? "pointer"
-                : "default",
           }}
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-          onClick={handleClick}
-          onTouchEnd={handleTouchEnd}
         >
-          <div className="message-sender-name">
-            {msg.isIncoming
-              ? selectedContact?.name || msg.sender
-              : msg.sender || userId}
-          </div>
           {renderMessageContent()}
-          {/* Edit button for outgoing text messages - shown on hover/long-press */}
-          {isEditableTextMessage && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                onEdit?.(msg.id, getContentString());
-                // Hide button after clicking
-                setShowEditButton(false);
-              }}
-              onTouchStart={(e) => {
-                // Prevent the message bubble's touch handler from firing when touching the button
-                e.stopPropagation();
-              }}
-              onTouchEnd={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                // Trigger edit when button is tapped
-                onEdit?.(msg.id, getContentString());
-                // Hide button after clicking
-                setShowEditButton(false);
-              }}
-              className="message-edit-button"
-              title="Edit message"
-              style={{
-                position: "absolute",
-                top: "4px",
-                right: "4px",
-                background: "rgba(0, 0, 0, 0.05)",
-                border: "none",
-                borderRadius: "4px",
-                padding: "4px",
-                cursor: "pointer",
-                display: showEditButton ? "flex" : "none",
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: 0.7,
-                transition: "opacity 0.2s, background 0.2s",
-                zIndex: 10,
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.opacity = "1";
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  "rgba(0, 0, 0, 0.1)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.opacity = "0.7";
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  "rgba(0, 0, 0, 0.05)";
-              }}
-            >
-              <Edit2 size={14} color="#666" />
-            </button>
-          )}
         </div>
         <div className="message-time">
           {msg.timestamp}
@@ -575,12 +390,6 @@ export default function FPMessageBubble({
           )}
         </div>
       </div>
-      {/* Avatar after message for outgoing */}
-      {!msg.isIncoming && (
-        <div className="message-avatar">
-          <img src={msg.avatar || ""} alt={msg.sender} />
-        </div>
-      )}
     </div>
   );
 }

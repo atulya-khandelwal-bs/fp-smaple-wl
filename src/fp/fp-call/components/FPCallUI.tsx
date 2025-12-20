@@ -1,3 +1,4 @@
+// import React, { useEffect } from "react";
 import React from "react";
 import { LocalUser, RemoteUser } from "agora-rtc-react";
 import {
@@ -67,7 +68,155 @@ export const FPCallUI = ({
   isAudioCall,
   onEndCall,
   peerPresenceStatus,
+  // User info
+  localUserName,
+  localUserPhoto,
+  localUserId,
+  peerName,
+  peerAvatar,
 }: FPCallUIProps): React.JSX.Element => {
+  // Helper function to get initials from name or userId
+  const getInitials = (name?: string, userId?: string): string => {
+    if (name && name.trim()) {
+      const parts = name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return name.substring(0, 2).toUpperCase();
+    }
+    if (userId) {
+      return userId.substring(0, 2).toUpperCase();
+    }
+    return "U";
+  };
+
+  // Helper component for circular avatar
+  const CircularAvatar = ({
+    name,
+    photo,
+    userId,
+    size = 120,
+  }: {
+    name?: string;
+    photo?: string;
+    userId?: string;
+    size?: number;
+  }): React.JSX.Element => {
+    const initials = getInitials(name, userId);
+    const hasPhoto = photo && photo.trim() !== "";
+
+    return (
+      <div
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          borderRadius: "50%",
+          background: hasPhoto ? "transparent" : "#4f46e5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+          flexShrink: 0,
+        }}
+      >
+        {hasPhoto ? (
+          <img
+            src={photo}
+            alt={name || "User"}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+            onError={(e) => {
+              // Fallback to initials if image fails to load
+              const target = e.target as HTMLImageElement;
+              target.style.display = "none";
+              const parent = target.parentElement;
+              if (parent) {
+                parent.style.background = "#4f46e5";
+                const initialsDiv = document.createElement("div");
+                initialsDiv.textContent = initials;
+                initialsDiv.style.cssText = `
+                  color: #ffffff;
+                  font-size: ${size * 0.4}px;
+                  font-weight: 600;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  width: 100%;
+                  height: 100%;
+                `;
+                parent.appendChild(initialsDiv);
+              }
+            }}
+          />
+        ) : (
+          <span
+            style={{
+              color: "#ffffff",
+              fontSize: `${size * 0.4}px`,
+              fontWeight: 600,
+            }}
+          >
+            {initials}
+          </span>
+        )}
+      </div>
+    );
+  };
+  // // Log remote user details
+  // useEffect(() => {
+  //   if (remoteUsers && remoteUsers.length > 0) {
+  //     console.log("📞 Remote Users in Call:", {
+  //       count: remoteUsers.length,
+  //       users: remoteUsers.map((user) => ({
+  //         uid: user.uid,
+  //         hasAudio: !!user.audioTrack,
+  //         hasVideo: !!user.videoTrack,
+  //         audioTrackState: user.audioTrack?.isPlaying
+  //           ? "playing"
+  //           : "not playing",
+  //         videoTrackState: user.videoTrack?.isPlaying
+  //           ? "playing"
+  //           : "not playing",
+  //         muted: user.audioTrack?.muted,
+  //         cameraOn: user.videoTrack?.isPlaying,
+  //         // Additional track details
+  //         audioTrackId: user.audioTrack?.trackMediaType,
+  //         videoTrackId: user.videoTrack?.trackMediaType,
+  //       })),
+  //     });
+
+  //     // Log individual user details
+  //     remoteUsers.forEach((user, index) => {
+  //       console.log(`👤 Remote User ${index + 1}:`, {
+  //         uid: user.uid,
+  //         uidType: typeof user.uid,
+  //         hasAudioTrack: !!user.audioTrack,
+  //         hasVideoTrack: !!user.videoTrack,
+  //         audioTrack: user.audioTrack
+  //           ? {
+  //               isPlaying: user.audioTrack.isPlaying,
+  //               muted: user.audioTrack.muted,
+  //               trackMediaType: user.audioTrack.trackMediaType,
+  //               getVolumeLevel: typeof user.audioTrack.getVolumeLevel,
+  //             }
+  //           : null,
+  //         videoTrack: user.videoTrack
+  //           ? {
+  //               isPlaying: user.videoTrack.isPlaying,
+  //               trackMediaType: user.videoTrack.trackMediaType,
+  //               getCurrentFrameData: typeof user.videoTrack.getCurrentFrameData,
+  //             }
+  //           : null,
+  //       });
+  //     });
+  //   } else {
+  //     console.log("📞 No remote users in call");
+  //   }
+  // }, [remoteUsers]);
+
   // Helper to reset controls timer on mobile
   const resetControlsTimer = (): void => {
     if (window.innerWidth <= 768) {
@@ -191,7 +340,7 @@ export const FPCallUI = ({
                           )}
                         </div>
                       )}
-                    {localCameraTrack ? (
+                    {localCameraTrack && cameraOn && !isAudioCall ? (
                       <LocalUser
                         audioTrack={localMicrophoneTrack}
                         cameraOn={cameraOn}
@@ -217,18 +366,42 @@ export const FPCallUI = ({
                           width: "100%",
                           height: "100%",
                           display: "flex",
+                          flexDirection: "column",
                           alignItems: "center",
                           justifyContent: "center",
                           background: "#000",
                           color: "#fff",
                           borderRadius: "8px",
+                          gap: "16px",
                         }}
                       >
-                        {isAudioCall
-                          ? "Audio Call"
-                          : cameraOn
-                          ? "Waiting for camera..."
-                          : "Camera off"}
+                        {isAudioCall ? (
+                          <>
+                            <CircularAvatar
+                              name={localUserName}
+                              photo={localUserPhoto}
+                              userId={localUserId}
+                              size={120}
+                            />
+                            <span style={{ fontSize: "16px", fontWeight: 500 }}>
+                              {localUserName || "Audio Call"}
+                            </span>
+                          </>
+                        ) : cameraOn ? (
+                          "Waiting for camera..."
+                        ) : (
+                          <>
+                            <CircularAvatar
+                              name={localUserName}
+                              photo={localUserPhoto}
+                              userId={localUserId}
+                              size={120}
+                            />
+                            <span style={{ fontSize: "16px", fontWeight: 500 }}>
+                              {localUserName || "Camera off"}
+                            </span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -244,15 +417,42 @@ export const FPCallUI = ({
                     }}
                     style={{ cursor: "pointer" }}
                   >
-                    <RemoteUser
-                      user={user}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        borderRadius: "8px",
-                      }}
-                    />
+                    {user.hasVideo && user.videoTrack ? (
+                      <RemoteUser
+                        user={user}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          borderRadius: "8px",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: "#000",
+                          color: "#fff",
+                          borderRadius: "8px",
+                          gap: "16px",
+                        }}
+                      >
+                        <CircularAvatar
+                          name={peerName}
+                          photo={peerAvatar}
+                          userId={undefined}
+                          size={120}
+                        />
+                        <span style={{ fontSize: "16px", fontWeight: 500 }}>
+                          {peerName || "Camera off"}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </>
@@ -310,7 +510,7 @@ export const FPCallUI = ({
                           )}
                         </div>
                       )}
-                    {localCameraTrack ? (
+                    {localCameraTrack && cameraOn && !isAudioCall ? (
                       <LocalUser
                         audioTrack={localMicrophoneTrack}
                         cameraOn={cameraOn}
@@ -336,18 +536,42 @@ export const FPCallUI = ({
                           width: "100%",
                           height: "100%",
                           display: "flex",
+                          flexDirection: "column",
                           alignItems: "center",
                           justifyContent: "center",
                           background: "#000",
                           color: "#fff",
                           borderRadius: "8px",
+                          gap: "16px",
                         }}
                       >
-                        {isAudioCall
-                          ? "Audio Call"
-                          : cameraOn
-                          ? "Waiting for camera..."
-                          : "Camera off"}
+                        {isAudioCall ? (
+                          <>
+                            <CircularAvatar
+                              name={localUserName}
+                              photo={localUserPhoto}
+                              userId={localUserId}
+                              size={120}
+                            />
+                            <span style={{ fontSize: "16px", fontWeight: 500 }}>
+                              {localUserName || "Audio Call"}
+                            </span>
+                          </>
+                        ) : cameraOn ? (
+                          "Waiting for camera..."
+                        ) : (
+                          <>
+                            <CircularAvatar
+                              name={localUserName}
+                              photo={localUserPhoto}
+                              userId={localUserId}
+                              size={120}
+                            />
+                            <span style={{ fontSize: "16px", fontWeight: 500 }}>
+                              {localUserName || "Camera off"}
+                            </span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -383,7 +607,7 @@ export const FPCallUI = ({
                           )}
                         </div>
                       )}
-                    {localCameraTrack ? (
+                    {localCameraTrack && cameraOn && !isAudioCall ? (
                       <LocalUser
                         audioTrack={localMicrophoneTrack}
                         cameraOn={cameraOn}
@@ -409,18 +633,42 @@ export const FPCallUI = ({
                           width: "100%",
                           height: "100%",
                           display: "flex",
+                          flexDirection: "column",
                           alignItems: "center",
                           justifyContent: "center",
                           background: "#000",
                           color: "#fff",
                           borderRadius: "8px",
+                          gap: "16px",
                         }}
                       >
-                        {isAudioCall
-                          ? "Audio Call"
-                          : cameraOn
-                          ? "Waiting for camera..."
-                          : "Camera off"}
+                        {isAudioCall ? (
+                          <>
+                            <CircularAvatar
+                              name={localUserName}
+                              photo={localUserPhoto}
+                              userId={localUserId}
+                              size={120}
+                            />
+                            <span style={{ fontSize: "16px", fontWeight: 500 }}>
+                              {localUserName || "Audio Call"}
+                            </span>
+                          </>
+                        ) : cameraOn ? (
+                          "Waiting for camera..."
+                        ) : (
+                          <>
+                            <CircularAvatar
+                              name={localUserName}
+                              photo={localUserPhoto}
+                              userId={localUserId}
+                              size={120}
+                            />
+                            <span style={{ fontSize: "16px", fontWeight: 500 }}>
+                              {localUserName || "Camera off"}
+                            </span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -429,15 +677,42 @@ export const FPCallUI = ({
                 {/* Remote Users */}
                 {remoteUsers.map((user) => (
                   <div key={user.uid} className="video-item remote-overlay">
-                    <RemoteUser
-                      user={user}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        borderRadius: "8px",
-                      }}
-                    />
+                    {user.hasVideo && user.videoTrack ? (
+                      <RemoteUser
+                        user={user}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          borderRadius: "8px",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: "#000",
+                          color: "#fff",
+                          borderRadius: "8px",
+                          gap: "16px",
+                        }}
+                      >
+                        <CircularAvatar
+                          name={peerName}
+                          photo={peerAvatar}
+                          userId={undefined}
+                          size={120}
+                        />
+                        <span style={{ fontSize: "16px", fontWeight: 500 }}>
+                          {peerName || "Camera off"}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </>

@@ -11,6 +11,10 @@ interface FPCallAppProps {
   onEndCall: () => void;
   isAudioCall?: boolean;
   chatClient?: Connection | null;
+  localUserName?: string;
+  localUserPhoto?: string;
+  peerName?: string;
+  peerAvatar?: string;
 }
 
 type PresenceStatus = "offline" | "waiting" | "in_call" | null;
@@ -23,6 +27,10 @@ function FPCallApp({
   onEndCall,
   isAudioCall = false,
   chatClient,
+  localUserName,
+  localUserPhoto,
+  peerName,
+  peerAvatar,
 }: FPCallAppProps): React.JSX.Element {
   const hasPublishedPresence = useRef(false);
   const hasSubscribedPresence = useRef(false);
@@ -184,6 +192,10 @@ function FPCallApp({
         onEndCall={onEndCall}
         isAudioCall={isAudioCall}
         peerPresenceStatus={peerPresenceStatus}
+        localUserName={localUserName}
+        localUserPhoto={localUserPhoto}
+        peerName={peerName}
+        peerAvatar={peerAvatar}
       />
     </div>
   );

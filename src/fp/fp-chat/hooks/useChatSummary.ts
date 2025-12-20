@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { Connection } from "agora-chat";
 import axios from "axios";
+import config from "../../common/config.ts";
 
 export interface Summary {
   id: number;
@@ -72,8 +73,8 @@ export function useChatSummary({
     }
     setError(null);
 
-    // Use localhost:8000 for summary API
-    const summaryUrl = `http://localhost:8000/api/v1/summaries/latest`;
+    // Use config API endpoint for summary
+    const summaryUrl = config.api.latestSummary;
     const params = {
       peerId: peerId,
       userId: userId,

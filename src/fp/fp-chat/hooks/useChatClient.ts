@@ -21,11 +21,14 @@ export function useChatClient(
   handlers?: MessageHandlers
 ): RefObject<Connection | null> {
   const clientRef = useRef<Connection | null>(null);
+  const handlersRef = useRef<MessageHandlers | undefined>(handlers);
 
+  // Create client and register initial handlers
   useEffect(() => {
     clientRef.current = createChatClient(appKey);
     if (handlers && clientRef.current) {
       clientRef.current.addEventHandler("app_handlers", handlers);
+      handlersRef.current = handlers;
     }
     return () => {
       if (clientRef.current) {
@@ -34,6 +37,22 @@ export function useChatClient(
       }
     };
   }, [appKey]);
+
+  // Re-register handlers when they change (but client already exists)
+  // This ensures handlers are always up-to-date after component re-renders
+  // (e.g., after call ends, handlers are recreated and need to be re-registered)
+  useEffect(() => {
+    if (clientRef.current) {
+      // Always remove old handlers first (if any)
+      clientRef.current.removeEventHandler("app_handlers");
+      // Add new handlers if provided
+      if (handlers) {
+        clientRef.current.addEventHandler("app_handlers", handlers);
+        handlersRef.current = handlers;
+        console.log("🔄 Message handlers re-registered");
+      }
+    }
+  }, [handlers]);
 
   return clientRef;
 }

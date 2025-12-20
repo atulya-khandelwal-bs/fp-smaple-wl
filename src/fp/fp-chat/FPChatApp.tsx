@@ -2,16 +2,15 @@ import React, { useEffect, useState, useRef } from "react";
 import "./FPChatApp.css";
 import FPConversationList from "./components/FPConversationList.tsx";
 import FPChatInterface from "./components/FPChatInterface.tsx";
-import FPUserDetails from "./components/FPUserDetails.tsx";
 import FPCallApp from "../fp-call/FPCallApp.tsx";
 import AgoraChat from "agora-chat";
 import { useChatClient } from "./hooks/useChatClient.ts";
 import config from "../common/config.ts";
 import { buildCustomExts } from "./utils/buildCustomExts.ts";
 import { createMessageHandlers } from "./utils/messageHandlers.ts";
-import { Contact, Message, CoachInfo, LogEntry } from "../common/types/chat";
+import { Contact, Message, LogEntry } from "../common/types/chat";
 import { CallEndData } from "../common/types/call";
-import axios from "axios";
+// import axios from "axios";
 
 interface FPChatAppProps {
   userId: string;
@@ -48,14 +47,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
   const [logs, setLogs] = useState<(string | LogEntry)[]>([]);
   const [isMobileView, setIsMobileView] = useState<boolean>(false);
   const [showChatOnMobile, setShowChatOnMobile] = useState<boolean>(false);
-  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
-  const [filterType, setFilterType] = useState<
-    "all" | "pending_customer" | "pending_doctor" | "first_response"
-  >("all");
-  const [coachInfo, setCoachInfo] = useState<CoachInfo>({
-    name: "",
-    profilePhoto: "",
-  });
 
   // Call state management
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
@@ -235,42 +226,8 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     return await generateToken();
   };
 
-  // Fetch coach info when userId is set
-  useEffect(() => {
-    const fetchCoachInfo = async (): Promise<void> => {
-      if (!userId) {
-        setCoachInfo({ name: "", profilePhoto: "" });
-        return;
-      }
-
-      try {
-        const response = await fetch(config.api.fetchCoaches);
-
-        if (response.ok) {
-          const data = (await response.json()) as {
-            coaches?: Array<{
-              coachId: string | number;
-              coachName?: string;
-              coachPhoto?: string;
-            }>;
-          };
-          const coach = data.coaches?.find(
-            (c) => String(c.coachId) === String(userId)
-          );
-          if (coach) {
-            setCoachInfo({
-              name: coach.coachName || "",
-              profilePhoto: coach.coachPhoto || "",
-            });
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching coach info:", error);
-      }
-    };
-
-    fetchCoachInfo();
-  }, [userId]);
+  // Note: userId is now a patient, not a coach
+  // coachInfo is not needed for patients - it will be set when a coach is selected
 
   // Detect mobile view
   useEffect(() => {
@@ -290,236 +247,71 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     }
   }, [selectedContact, showChatOnMobile]);
 
-  // Map filter type to API format
-  const getApiFilter = (
-    filterType: "all" | "pending_customer" | "pending_doctor" | "first_response"
-  ): string => {
-    const filterMap: Record<
-      "all" | "pending_customer" | "pending_doctor" | "first_response",
-      string
-    > = {
-      all: "all",
-      first_response: "first-response",
-      pending_customer: "reply-pending-from-user",
-      pending_doctor: "reply-pending-from-coach",
-    };
-    return filterMap[filterType] || "all";
-  };
-
-  // Map sort order to API format
-  const getApiSort = (sortOrder: "newest" | "oldest"): string => {
-    return sortOrder === "newest" ? "desc" : "asc";
-  };
-
-  // Fetch conversations from API when userId is available (doesn't require login)
+  // Fetch coaches from API when userId (patient) is available
   useEffect(() => {
-    const fetchConversations = async (): Promise<void> => {
+    const fetchCoaches = async (): Promise<void> => {
       if (!userId) {
         return;
       }
 
       try {
-        const apiFilter = getApiFilter(filterType);
-        const apiSort = getApiSort(sortOrder);
+        addLog(`Fetching coaches for patient ${userId}...`);
 
-        addLog(
-          `Fetching conversations for coach ${userId} (filter: ${apiFilter}, sort: ${apiSort})...`
-        );
-
-        const url = new URL(config.api.fetchConversations);
-        url.searchParams.append("coachId", userId);
-        url.searchParams.append("filter", apiFilter);
-        url.searchParams.append("sort", apiSort);
-        url.searchParams.append("page", "1");
-        url.searchParams.append("limit", "20");
-
-        const response = await fetch(url.toString());
+        const response = await fetch(config.api.fetchCoaches);
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch conversations: ${response.status}`);
+          throw new Error(`Failed to fetch coaches: ${response.status}`);
         }
 
         const data = (await response.json()) as {
-          conversations?: Array<{
-            userId: string | number;
-            userName?: string;
-            userPhoto?: string;
-            lastMessage?: string | object;
-            lastMessageTime?: string | Date;
-            lastMessageSender?: string | number;
-            conversationId?: string;
-            messageCount?: number;
-            unreadCount?: number;
-            filterState?: string;
+          coaches?: Array<{
+            coachId: string | number;
+            coachName?: string;
+            coachPhoto?: string;
           }>;
+          count?: number;
         };
-        const apiConversations = data.conversations || [];
+        const apiCoaches = data.coaches || [];
 
-        // Helper function to generate preview from lastMessage (could be string or object)
-        const generatePreviewFromLastMessage = (
-          lastMsg: string | object | null | undefined
-        ): string | null => {
-          if (!lastMsg) return null;
+        // Filter out recorder (UID 999999999) from coaches
+        const filteredCoaches = apiCoaches.filter(
+          (coach) => String(coach.coachId) !== "999999999"
+        );
 
-          let parsed = null;
-
-          // If it's already a string, try to parse it as JSON
-          if (typeof lastMsg === "string") {
-            // Check if it looks like JSON (starts with { or [)
-            if (
-              lastMsg.trim().startsWith("{") ||
-              lastMsg.trim().startsWith("[")
-            ) {
-              try {
-                parsed = JSON.parse(lastMsg);
-              } catch {
-                // Not valid JSON, return as-is
-                return lastMsg;
-              }
-            } else {
-              // Plain text string, return as-is
-              return lastMsg;
-            }
-          } else if (typeof lastMsg === "object") {
-            // Already an object
-            parsed = lastMsg;
-          } else {
-            // Other type, convert to string
-            return String(lastMsg);
-          }
-
-          // Now process the parsed object
-          if (parsed && typeof parsed === "object" && "type" in parsed) {
-            const parsedObj = parsed as {
-              type?: string;
-              fileName?: string;
-              callType?: string;
-              message?: string;
-              body?: string;
-            };
-            const t = String(parsedObj.type).toLowerCase();
-            if (t === "image") return "Photo";
-            if (t === "file")
-              return parsedObj.fileName ? `📎 ${parsedObj.fileName}` : "File";
-            if (t === "audio") return "Audio";
-            if (t === "meal_plan_updated" || t === "meal_plan_update")
-              return "Meal plan updated";
-            if (
-              t === "new_nutritionist" ||
-              t === "new_nutrionist" ||
-              t === "coach_assigned" ||
-              t === "coach_details"
-            )
-              return (
-                (parsedObj as { title?: string; name?: string }).title ||
-                (parsedObj as { title?: string; name?: string }).name ||
-                "New nutritionist assigned"
-              );
-            if (t === "products" || t === "recommended_products")
-              return "Products";
-            if (t === "call")
-              return `${
-                parsedObj.callType === "video" ? "Video" : "Audio"
-              } call`;
-            if (t === "general_notification" || t === "general-notification")
-              return (parsedObj as { title?: string }).title || "Notification";
-            if (t === "video_call")
-              return (parsedObj as { title?: string }).title || "Video call";
-            if (t === "voice_call")
-              return (parsedObj as { title?: string }).title || "Voice call";
-            if (t === "documents")
-              return (parsedObj as { title?: string }).title || "Document";
-            if (t === "call_scheduled") {
-              const time = (parsedObj as { time?: number | string }).time;
-              if (time) {
-                const scheduledDate = new Date(
-                  typeof time === "number"
-                    ? time * 1000
-                    : parseInt(time, 10) * 1000
-                );
-                return `Schedule ${scheduledDate.toLocaleString()}`;
-              }
-              return "Call scheduled";
-            }
-            if (t === "scheduled_call_canceled") {
-              return "Scheduled call cancelled";
-            }
-            if (t === "text") {
-              // API uses "message" field for text messages
-              return parsedObj.message || parsedObj.body || "";
-            }
-          }
-
-          // If object has body or message, use it
-          if (parsed && typeof parsed === "object") {
-            const parsedObj = parsed as { body?: string; message?: string };
-            if (parsedObj.body) return parsedObj.body;
-            if (parsedObj.message) return parsedObj.message;
-          }
-
-          // If we parsed from string but it's not a recognized format, return original string
-          if (typeof lastMsg === "string") {
-            return lastMsg;
-          }
-
-          // Otherwise stringify the object
-          return JSON.stringify(parsed || lastMsg);
-        };
-
-        // Map API response to app conversation format
-        const mappedConversations = apiConversations.map(
-          (conv: {
-            userId: string | number;
-            userName?: string;
-            userPhoto?: string;
-            lastMessage?: string | object;
-            lastMessageTime?: string | Date;
-            lastMessageSender?: string | number;
-            conversationId?: string;
-            messageCount?: number;
-            unreadCount?: number;
-            filterState?: string;
+        // Map API response to app contact format (no preview messages)
+        const mappedCoaches = filteredCoaches.map(
+          (coach: {
+            coachId: string | number;
+            coachName?: string;
+            coachPhoto?: string;
           }) => {
-            // Generate preview from lastMessage (handles both string and object formats)
-            const lastMessage = generatePreviewFromLastMessage(
-              conv.lastMessage
-            );
-
             return {
-              id: String(conv.userId), // Use userId as Agora ID (string)
-              name: conv.userName || `User ${conv.userId}`,
-              avatar: conv.userPhoto || config.defaults.avatar,
-              lastMessage: lastMessage ?? undefined, // Convert null to undefined
-              timestamp: conv.lastMessageTime
-                ? new Date(conv.lastMessageTime)
-                : null,
-              lastMessageFrom: conv.lastMessageSender
-                ? String(conv.lastMessageSender)
-                : null,
-              // Store additional API data for reference
-              conversationId: conv.conversationId,
-              messageCount: conv.messageCount || 0,
-              unreadCount: conv.unreadCount || 0,
-              filterState: conv.filterState,
+              id: String(coach.coachId), // Use coachId as Agora ID (string)
+              name: coach.coachName || `Coach ${coach.coachId}`,
+              avatar: coach.coachPhoto || config.defaults.avatar,
+              // No lastMessage, timestamp, or preview for coaches
+              lastMessage: undefined,
+              timestamp: null,
+              lastMessageFrom: null,
             };
           }
         );
 
-        setConversations(mappedConversations);
-        addLog(`Loaded ${mappedConversations.length} conversation(s) from API`);
+        setConversations(mappedCoaches);
+        addLog(`Loaded ${mappedCoaches.length} coach(es) from API`);
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
-        addLog(`Error fetching conversations: ${errorMessage}`);
-        console.error("Error fetching conversations:", error);
+        addLog(`Error fetching coaches: ${errorMessage}`);
+        console.error("Error fetching coaches:", error);
         // Set empty array on error to prevent retry loop
         setConversations([]);
       }
     };
 
-    fetchConversations();
+    fetchCoaches();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoggedIn, userId, filterType, sortOrder]);
+  }, [userId]);
 
   // Register a user with Agora (called when selecting a user)
   const registerUser = async (username: string): Promise<boolean> => {
@@ -633,6 +425,12 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
 
     console.log("🔵 [USER SELECTION] Token:", token);
 
+    // Don't allow selecting recorder (UID 999999999) as a contact
+    if (String(contact.id) === "999999999") {
+      console.log("🚫 Cannot select recorder (UID: 999999999) as contact");
+      return;
+    }
+
     // Register the user if not already registered
     await registerUser(contact.id);
 
@@ -663,6 +461,12 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
   };
 
   const handleAddConversation = (contact: Contact): void => {
+    // Don't allow adding recorder (UID 999999999) as a conversation
+    if (String(contact.id) === "999999999") {
+      console.log("🚫 Cannot add recorder (UID: 999999999) as conversation");
+      return;
+    }
+
     const newConversation = {
       ...contact,
       lastMessage: "",
@@ -727,7 +531,7 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       channel,
       isInitiator: true,
       callType: callType,
-      localUserName: userId, // You can get actual name from user profile if available
+      localUserName: userId, // userId is now the patient
       peerName: selectedContact?.name || peerId,
       peerAvatar: selectedContact?.avatar,
     });
@@ -759,20 +563,20 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     setIncomingCall(null);
   };
 
-  function formatDurationFromSeconds(totalSeconds: number): string {
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
+  // function formatDurationFromSeconds(totalSeconds: number): string {
+  //   const hours = Math.floor(totalSeconds / 3600);
+  //   const minutes = Math.floor((totalSeconds % 3600) / 60);
+  //   const seconds = totalSeconds % 60;
 
-    const parts = [];
+  //   const parts = [];
 
-    if (hours > 0) parts.push(`${hours} hr${hours > 1 ? "s" : ""}`);
-    if (minutes > 0) parts.push(`${minutes} min${minutes > 1 ? "s" : ""}`);
-    if (seconds > 0 || parts.length === 0)
-      parts.push(`${seconds} sec${seconds > 1 ? "s" : ""}`);
+  //   if (hours > 0) parts.push(`${hours} hr${hours > 1 ? "s" : ""}`);
+  //   if (minutes > 0) parts.push(`${minutes} min${minutes > 1 ? "s" : ""}`);
+  //   if (seconds > 0 || parts.length === 0)
+  //     parts.push(`${seconds} sec${seconds > 1 ? "s" : ""}`);
 
-    return parts.join(" ");
-  }
+  //   return parts.join(" ");
+  // }
 
   // Handle reject call
   // @ts-expect-error - May be used in future for incoming call handling
@@ -805,94 +609,94 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       return;
     }
 
-    const bothUsersConnected = callInfo.bothUsersConnected === true;
+    // const bothUsersConnected = callInfo.bothUsersConnected === true;
 
-    // Calculate duration - use provided duration or calculate from timestamps
-    let duration = callInfo.duration || 0;
-    if (duration <= 0 && callInfo.callStartTime && callInfo.callEndTime) {
-      duration = Math.floor(
-        (callInfo.callEndTime - callInfo.callStartTime) / 1000
-      );
-    }
+    // // Calculate duration - use provided duration or calculate from timestamps
+    // let duration = callInfo.duration || 0;
+    // if (duration <= 0 && callInfo.callStartTime && callInfo.callEndTime) {
+    //   duration = Math.floor(
+    //     (callInfo.callEndTime - callInfo.callStartTime) / 1000
+    //   );
+    // }
 
     // Ensure duration is at least 0 (not negative)
-    duration = Math.max(0, duration);
+    // duration = Math.max(0, duration);
 
-    if (!bothUsersConnected || duration <= 0) {
-      console.log("📞 Call End Message - NOT sending (conditions not met):", {
-        bothUsersConnected,
-        duration,
-      });
-      addLog(
-        "Call ended without other user joining. Not sending call summary to backend."
-      );
-      setActiveCall(null);
-      setIncomingCall(null);
-      setMessage("");
-      return;
-    }
+    // if (!bothUsersConnected || duration <= 0) {
+    //   console.log("📞 Call End Message - NOT sending (conditions not met):", {
+    //     bothUsersConnected,
+    //     duration,
+    //   });
+    //   addLog(
+    //     "Call ended without other user joining. Not sending call summary to backend."
+    //   );
+    //   setActiveCall(null);
+    //   setIncomingCall(null);
+    //   setMessage("");
+    //   return;
+    // }
 
-    try {
-      // Determine message type and title based on call type
-      const isVideoCall = activeCall.callType === "video";
-      const messageType = isVideoCall ? "video_call" : "voice_call";
-      const callTitle = isVideoCall ? "Video call" : "Voice call";
+    // try {
+    // // Determine message type and title based on call type
+    // const isVideoCall = activeCall.callType === "video";
+    // const messageType = isVideoCall ? "video_call" : "voice_call";
+    // const callTitle = isVideoCall ? "Video call" : "Voice call";
 
-      // Send call end message with duration
-      const payload = {
-        title: callTitle,
-        description: `${formatDurationFromSeconds(duration)}`,
-        icons_details: {
-          left_icon: "",
-          right_icon: "",
-        },
-        call_details: {
-          call_url: "",
-        },
-        redirection_details: [],
-      };
+    // // Send call end message with duration
+    // const payload = {
+    //   title: callTitle,
+    //   description: `${formatDurationFromSeconds(duration)}`,
+    //   icons_details: {
+    //     left_icon: "",
+    //     right_icon: "",
+    //   },
+    //   call_details: {
+    //     call_url: "",
+    //   },
+    //   redirection_details: [],
+    // };
 
-      const body = {
-        from: userId,
-        to: peerId,
-        type: messageType,
-        data: payload,
-      };
+    // const body = {
+    //   from: userId,
+    //   to: peerId,
+    //   type: messageType,
+    //   data: payload,
+    // };
 
-      try {
-        const response = await axios.post(config.api.customMessage, body);
-        console.log(`${callTitle} message sent successfully:`, response.data);
+    // try {
+    //   const response = await axios.post(config.api.customMessage, body);
+    //   console.log(`${callTitle} message sent successfully:`, response.data);
 
-        // Mark call end message as sent to prevent duplicates
-        callEndMessageSentRef.current = true;
+    //   // Mark call end message as sent to prevent duplicates
+    //   callEndMessageSentRef.current = true;
 
-        // Add message directly to logs for real-time display
-        if (addLog) {
-          const messageToLog = JSON.stringify({
-            type: messageType,
-            ...payload,
-          });
-          addLog({
-            log: `You → ${peerId}: ${messageToLog}`,
-            timestamp: new Date(),
-          });
-        }
-      } catch (error) {
-        console.error(
-          `Error sending ${callTitle.toLowerCase()} message:`,
-          error
-        );
-      }
+    //   // Add message directly to logs for real-time display
+    //   if (addLog) {
+    //     const messageToLog = JSON.stringify({
+    //       type: messageType,
+    //       ...payload,
+    //     });
+    //     addLog({
+    //       log: `You → ${peerId}: ${messageToLog}`,
+    //       timestamp: new Date(),
+    //     });
+    //   }
+    // } catch (error) {
+    //   console.error(
+    //     `Error sending ${callTitle.toLowerCase()} message:`,
+    //     error
+    //   );
+    // }
 
-      addLog(`${callTitle} ended. Duration: ${duration}s`);
-    } catch (error) {
-      console.error("Error sending call end message:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      addLog(`Failed to send call end message: ${errorMessage}`);
-      // Reset flag on error so it can be retried if needed
-      callEndMessageSentRef.current = false;
-    }
+    // addLog(`${callTitle} ended. Duration: ${duration}s`);
+    // } catch (error) {
+    //   console.error("Error sending call end message:", error);
+    //   const errorMessage =
+    //     error instanceof Error ? error.message : String(error);
+    //   addLog(`Failed to send call end message: ${errorMessage}`);
+    //   // Reset flag on error so it can be retried if needed
+    //   callEndMessageSentRef.current = false;
+    // }
 
     // Clear call state
     setActiveCall(null);
@@ -933,7 +737,33 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       const time = formattedMsg.system?.payload?.time as number | undefined;
       if (time) {
         const scheduledDate = new Date(time * 1000); // Convert seconds to milliseconds
-        return `Schedule ${scheduledDate.toLocaleString()}`;
+        // Format date as "11 Aug 10:00 am" (12-hour format with AM/PM)
+        const formatScheduledDate = (date: Date): string => {
+          const day = date.getDate();
+          const monthNames = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+          ];
+          const month = monthNames[date.getMonth()];
+          let hours = date.getHours();
+          const minutes = date.getMinutes();
+          const ampm = hours >= 12 ? "pm" : "am";
+          hours = hours % 12;
+          hours = hours ? hours : 12; // the hour '0' should be '12'
+          const minutesStr = minutes < 10 ? `0${minutes}` : minutes;
+          return `${day} ${month} ${hours}:${minutesStr} ${ampm}`;
+        };
+        return `Schedule, ${formatScheduledDate(scheduledDate)}`;
       }
       return "Call scheduled";
     } else if (formattedMsg.messageType === "scheduled_call_canceled") {
@@ -1143,6 +973,10 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       let isCustomMessage = false;
       let messageString = "";
 
+      // COMMENTED OUT: Custom message detection logic
+      // Only allowing text, media (image/file/photo), and call (voice_call/video_call) messages
+      // All other custom message types are disabled for sending
+      /*
       if (typeof messageToSend === "object") {
         // Already an object, use it directly
         parsedPayload = messageToSend as {
@@ -1177,12 +1011,69 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
           isCustomMessage = false;
         }
       }
+      */
+
+      // Only allow specific message types: text, image, file, audio, video_call, voice_call
+      if (typeof messageToSend === "object") {
+        // Already an object, use it directly
+        parsedPayload = messageToSend as {
+          type?: string;
+          [key: string]: unknown;
+        };
+        messageString = JSON.stringify(messageToSend);
+        if (
+          parsedPayload &&
+          typeof parsedPayload === "object" &&
+          parsedPayload.type
+        ) {
+          const messageType = String(parsedPayload.type).toLowerCase();
+          // Only allow: image, file, audio, video_call, voice_call
+          if (
+            messageType === "image" ||
+            messageType === "file" ||
+            messageType === "audio" ||
+            messageType === "video_call" ||
+            messageType === "voice_call"
+          ) {
+            isCustomMessage = true;
+          }
+        }
+      } else {
+        // String message - try to parse as JSON
+        messageString = messageToSend;
+        try {
+          parsedPayload = JSON.parse(messageToSend) as {
+            type?: string;
+            [key: string]: unknown;
+          };
+          if (
+            parsedPayload &&
+            typeof parsedPayload === "object" &&
+            parsedPayload.type
+          ) {
+            const messageType = String(parsedPayload.type).toLowerCase();
+            // Only allow: image, file, audio, video_call, voice_call
+            if (
+              messageType === "image" ||
+              messageType === "file" ||
+              messageType === "audio" ||
+              messageType === "video_call" ||
+              messageType === "voice_call"
+            ) {
+              isCustomMessage = true;
+            }
+          }
+        } catch {
+          // Not JSON, treat as plain text
+          isCustomMessage = false;
+        }
+      }
 
       // Prepare ext properties with sender info
       const extProperties = {
-        senderName: coachInfo.name || userId,
-        senderProfile: coachInfo.profilePhoto || config.defaults.avatar,
-        isFromUser: false,
+        senderName: userId, // userId is now the patient
+        senderProfile: config.defaults.avatar,
+        isFromUser: true, // Patient is the user
       };
 
       let options: {
@@ -1195,6 +1086,36 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
         ext?: typeof extProperties;
       };
 
+      // COMMENTED OUT: Custom message sending logic for non-allowed types
+      // Only allowing: text, image, file, audio, video_call, voice_call
+      // All other custom message types (meal_plan, products, notifications, etc.) are disabled
+      /*
+      if (isCustomMessage && parsedPayload && parsedPayload.type) {
+        // Build customExts based on message type
+        const customExts = buildCustomExts(
+          parsedPayload as { type: string; [key: string]: unknown }
+        );
+
+        if (!customExts) {
+          addLog("Invalid custom message payload");
+          setMessage(messageString); // Restore message
+          isSendingRef.current = false; // Reset flag on error
+          return;
+        }
+
+        // Custom message - all custom messages use type: "custom"
+        options = {
+          type: "custom",
+          to: peerId,
+          chatType: "singleChat",
+          customEvent: "customEvent",
+          customExts,
+          ext: extProperties,
+        };
+      } else {
+      */
+
+      // Only allow specific custom message types: image, file, audio, video_call, voice_call
       if (isCustomMessage && parsedPayload && parsedPayload.type) {
         // Build customExts based on message type
         const customExts = buildCustomExts(
@@ -1310,7 +1231,33 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
           const time = parsedPayload.time as number | undefined;
           if (time) {
             const scheduledDate = new Date(time * 1000); // Convert seconds to milliseconds
-            preview = `Schedule ${scheduledDate.toLocaleString()}`;
+            // Import formatScheduledDate function
+            const formatScheduledDate = (date: Date): string => {
+              const day = date.getDate();
+              const monthNames = [
+                "Jan",
+                "Feb",
+                "Mar",
+                "Apr",
+                "May",
+                "Jun",
+                "Jul",
+                "Aug",
+                "Sep",
+                "Oct",
+                "Nov",
+                "Dec",
+              ];
+              const month = monthNames[date.getMonth()];
+              let hours = date.getHours();
+              const minutes = date.getMinutes();
+              const ampm = hours >= 12 ? "pm" : "am";
+              hours = hours % 12;
+              hours = hours ? hours : 12; // the hour '0' should be '12'
+              const minutesStr = minutes < 10 ? `0${minutes}` : minutes;
+              return `${day} ${month} ${hours}:${minutesStr} ${ampm}`;
+            };
+            preview = `Schedule, ${formatScheduledDate(scheduledDate)}`;
           } else {
             preview = "Call scheduled";
           }
@@ -1415,6 +1362,10 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
           onEndCall={handleEndCall}
           isAudioCall={activeCall.callType === "audio"}
           chatClient={clientRef.current}
+          localUserName={activeCall.localUserName}
+          localUserPhoto={config.defaults.avatar}
+          peerName={activeCall.peerName}
+          peerAvatar={activeCall.peerAvatar}
         />
       </div>
     );
@@ -1438,10 +1389,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
             onSelectConversation={handleSelectConversation}
             userId={userId}
             onAddConversation={handleAddConversation}
-            sortOrder={sortOrder}
-            onSortOrderChange={setSortOrder}
-            filterType={filterType}
-            onFilterTypeChange={setFilterType}
           />
         </div>
         {/* Chat Panel - show on desktop always, on mobile only when showing chat */}
@@ -1477,7 +1424,7 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
                 }
                 onInitiateCall={handleInitiateCall}
                 onUpdateLastMessageFromHistory={updateLastMessageFromHistory}
-                coachInfo={coachInfo}
+                coachInfo={{ coachName: "", profilePhoto: "" }}
               />
             )
           ) : (
@@ -1488,16 +1435,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
               </div>
             </div>
           )}
-        </div>
-        {/* User Details Panel */}
-        <div className="user-details-panel-wrapper">
-          <FPUserDetails
-            selectedContact={selectedContact}
-            userId={userId}
-            peerId={peerId}
-            onSend={handleSendMessage}
-            addLog={addLog}
-          />
         </div>
       </div>
     </div>

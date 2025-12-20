@@ -33,7 +33,10 @@ interface MessageHandlersOptions {
 /**
  * Format date as "11 Aug 10:00 am" (no seconds, with AM/PM)
  */
-function formatScheduledDate(date: Date): string {
+// Recorder UID constant - ignore all messages from this user
+const RECORDER_ID = "999999999";
+
+export function formatScheduledDate(date: Date): string {
   const day = date.getDate();
   const monthNames = [
     "Jan",
@@ -106,6 +109,13 @@ export function createMessageHandlers({
       addLog("Disconnected");
     },
     onTextMessage: (msg: MessageBody) => {
+      // Ignore messages from recorder (UID 999999999)
+      const fromId = msg.from || "";
+      if (fromId === RECORDER_ID || String(fromId) === RECORDER_ID) {
+        console.log("🚫 Ignoring message from recorder (UID: 999999999)");
+        return;
+      }
+
       // Check if this is actually a custom message (Agora might deliver custom as text)
       if (msg.type === "custom") {
         // Handle as custom message
@@ -291,30 +301,37 @@ export function createMessageHandlers({
         if (msg.from) {
           const fromId = msg.from;
           // Normalize: try both with and without user_ prefix
-          const normalizedFromId = fromId.startsWith("user_") ? fromId : `user_${fromId}`;
-          const normalizedFromIdWithoutPrefix = fromId.startsWith("user_") ? fromId.replace("user_", "") : fromId;
-          
+          const normalizedFromId = fromId.startsWith("user_")
+            ? fromId
+            : `user_${fromId}`;
+          const normalizedFromIdWithoutPrefix = fromId.startsWith("user_")
+            ? fromId.replace("user_", "")
+            : fromId;
+
           console.log("🔄 [onTextMessage] Updating conversation preview:", {
             fromId,
             normalizedFromId,
             normalizedFromIdWithoutPrefix,
             preview,
           });
-          
+
           setConversations((prev) => {
             // Find conversation by matching either format
-            const existing = prev.find((c) => 
-              c.id === fromId || 
-              c.id === normalizedFromId || 
-              c.id === normalizedFromIdWithoutPrefix ||
-              c.id === `user_${normalizedFromIdWithoutPrefix}`
+            const existing = prev.find(
+              (c) =>
+                c.id === fromId ||
+                c.id === normalizedFromId ||
+                c.id === normalizedFromIdWithoutPrefix ||
+                c.id === `user_${normalizedFromIdWithoutPrefix}`
             );
-            
+
             console.log("🔄 [onTextMessage] Conversation search result:", {
-              existing: existing ? { id: existing.id, lastMessage: existing.lastMessage } : null,
-              allConversationIds: prev.map(c => c.id),
+              existing: existing
+                ? { id: existing.id, lastMessage: existing.lastMessage }
+                : null,
+              allConversationIds: prev.map((c) => c.id),
             });
-            
+
             if (existing) {
               // Use the existing conversation ID format
               const conversationId = existing.id;
@@ -331,7 +348,9 @@ export function createMessageHandlers({
               console.log("✅ [onTextMessage] Conversation updated:", {
                 conversationId,
                 newLastMessage: preview,
-                updatedConversation: updated.find(c => c.id === conversationId),
+                updatedConversation: updated.find(
+                  (c) => c.id === conversationId
+                ),
               });
               return updated;
             }
@@ -346,7 +365,10 @@ export function createMessageHandlers({
               lastSeen: "",
               lastMessageFrom: fromId,
             };
-            console.log("➕ [onTextMessage] Creating new conversation:", newConversation);
+            console.log(
+              "➕ [onTextMessage] Creating new conversation:",
+              newConversation
+            );
             return [newConversation, ...prev];
           });
         }
@@ -475,11 +497,37 @@ export function createMessageHandlers({
             )
               preview =
                 (objTyped as { title?: string }).title || "Notification";
-            else if (t === "video_call")
-              preview = (objTyped as { title?: string }).title || "Video call";
-            else if (t === "voice_call")
-              preview = (objTyped as { title?: string }).title || "Voice call";
-            else if (t === "documents")
+            else if (t === "video_call") {
+              // Ensure objTyped has all required fields for UI parsing
+              const videoCallData = {
+                ...objTyped,
+                type: "video_call",
+                title: (objTyped as { title?: string }).title || "Video call",
+                description: (objTyped as { description?: string }).description,
+                call_details: (objTyped as { call_details?: unknown })
+                  .call_details,
+                icons_details: (objTyped as { icons_details?: unknown })
+                  .icons_details,
+              };
+              // Update the object to include all fields
+              Object.assign(objTyped, videoCallData);
+              preview = videoCallData.title || "Video call";
+            } else if (t === "voice_call") {
+              // Ensure objTyped has all required fields for UI parsing
+              const voiceCallData = {
+                ...objTyped,
+                type: "voice_call",
+                title: (objTyped as { title?: string }).title || "Voice call",
+                description: (objTyped as { description?: string }).description,
+                call_details: (objTyped as { call_details?: unknown })
+                  .call_details,
+                icons_details: (objTyped as { icons_details?: unknown })
+                  .icons_details,
+              };
+              // Update the object to include all fields
+              Object.assign(objTyped, voiceCallData);
+              preview = voiceCallData.title || "Voice call";
+            } else if (t === "documents")
               preview = (objTyped as { title?: string }).title || "Document";
             else if (t === "call_scheduled") {
               const time = (objTyped as { time?: number | string }).time;
@@ -512,18 +560,23 @@ export function createMessageHandlers({
       if (msg.from) {
         const fromId = msg.from;
         // Normalize: try both with and without user_ prefix
-        const normalizedFromId = fromId.startsWith("user_") ? fromId : `user_${fromId}`;
-        const normalizedFromIdWithoutPrefix = fromId.startsWith("user_") ? fromId.replace("user_", "") : fromId;
-        
+        const normalizedFromId = fromId.startsWith("user_")
+          ? fromId
+          : `user_${fromId}`;
+        const normalizedFromIdWithoutPrefix = fromId.startsWith("user_")
+          ? fromId.replace("user_", "")
+          : fromId;
+
         setConversations((prev) => {
           // Find conversation by matching either format
-          const existing = prev.find((c) => 
-            c.id === fromId || 
-            c.id === normalizedFromId || 
-            c.id === normalizedFromIdWithoutPrefix ||
-            c.id === `user_${normalizedFromIdWithoutPrefix}`
+          const existing = prev.find(
+            (c) =>
+              c.id === fromId ||
+              c.id === normalizedFromId ||
+              c.id === normalizedFromIdWithoutPrefix ||
+              c.id === `user_${normalizedFromIdWithoutPrefix}`
           );
-          
+
           if (existing) {
             // Use the existing conversation ID format
             const conversationId = existing.id;
@@ -556,6 +609,15 @@ export function createMessageHandlers({
       }
     },
     onCustomMessage: (msg: MessageBody) => {
+      // Ignore messages from recorder (UID 999999999)
+      const fromId = msg.from || "";
+      if (fromId === RECORDER_ID || String(fromId) === RECORDER_ID) {
+        console.log(
+          "🚫 Ignoring custom message from recorder (UID: 999999999)"
+        );
+        return;
+      }
+
       // Handle custom messages (attachments)
       console.log("=== onCustomMessage called ===");
       console.log("Full msg object:", JSON.stringify(msg, null, 2));
@@ -983,11 +1045,39 @@ export function createMessageHandlers({
             preview = "Products";
           else if (t === "general_notification" || t === "general-notification")
             preview = paramsObj.title || "Notification";
-          else if (t === "video_call")
-            preview = paramsObj.title || "Video call";
-          else if (t === "voice_call")
-            preview = paramsObj.title || "Voice call";
-          else if (t === "documents") preview = paramsObj.title || "Document";
+          else if (t === "video_call") {
+            // Ensure normalizedData has all required fields for UI parsing
+            normalizedData = {
+              ...normalizedData,
+              type: "video_call",
+              title:
+                (normalizedData as { title?: string }).title || "Video call",
+              description: (normalizedData as { description?: string })
+                .description,
+              call_details: (normalizedData as { call_details?: unknown })
+                .call_details,
+              icons_details: (normalizedData as { icons_details?: unknown })
+                .icons_details,
+            };
+            preview =
+              (normalizedData as { title?: string }).title || "Video call";
+          } else if (t === "voice_call") {
+            // Ensure normalizedData has all required fields for UI parsing
+            normalizedData = {
+              ...normalizedData,
+              type: "voice_call",
+              title:
+                (normalizedData as { title?: string }).title || "Voice call",
+              description: (normalizedData as { description?: string })
+                .description,
+              call_details: (normalizedData as { call_details?: unknown })
+                .call_details,
+              icons_details: (normalizedData as { icons_details?: unknown })
+                .icons_details,
+            };
+            preview =
+              (normalizedData as { title?: string }).title || "Voice call";
+          } else if (t === "documents") preview = paramsObj.title || "Document";
           else if (t === "call_scheduled") {
             const time = (paramsObj as { time?: number | string }).time;
             if (time) {
@@ -1039,18 +1129,23 @@ export function createMessageHandlers({
       if (msg.from) {
         const fromId = msg.from;
         // Normalize: try both with and without user_ prefix
-        const normalizedFromId = fromId.startsWith("user_") ? fromId : `user_${fromId}`;
-        const normalizedFromIdWithoutPrefix = fromId.startsWith("user_") ? fromId.replace("user_", "") : fromId;
-        
+        const normalizedFromId = fromId.startsWith("user_")
+          ? fromId
+          : `user_${fromId}`;
+        const normalizedFromIdWithoutPrefix = fromId.startsWith("user_")
+          ? fromId.replace("user_", "")
+          : fromId;
+
         setConversations((prev) => {
           // Find conversation by matching either format
-          const existing = prev.find((c) => 
-            c.id === fromId || 
-            c.id === normalizedFromId || 
-            c.id === normalizedFromIdWithoutPrefix ||
-            c.id === `user_${normalizedFromIdWithoutPrefix}`
+          const existing = prev.find(
+            (c) =>
+              c.id === fromId ||
+              c.id === normalizedFromId ||
+              c.id === normalizedFromIdWithoutPrefix ||
+              c.id === `user_${normalizedFromIdWithoutPrefix}`
           );
-          
+
           if (existing) {
             // Use the existing conversation ID format
             const conversationId = existing.id;

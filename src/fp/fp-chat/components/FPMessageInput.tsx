@@ -1,5 +1,5 @@
 import React, { useEffect, RefObject, KeyboardEvent } from "react";
-import { Smile } from "lucide-react";
+import { Smile, Plus, Send, Mic, X } from "lucide-react";
 import "emoji-picker-element";
 import { DraftAttachment, Contact } from "../../common/types/chat";
 
@@ -22,7 +22,6 @@ interface FPMessageInputProps {
   inputRef: RefObject<HTMLInputElement>;
   buttonRef: RefObject<HTMLButtonElement>;
   emojiPickerRef: RefObject<HTMLDivElement>;
-  isEditing?: boolean;
 }
 
 export default function FPMessageInput({
@@ -44,7 +43,6 @@ export default function FPMessageInput({
   inputRef,
   buttonRef,
   emojiPickerRef,
-  isEditing = false,
 }: FPMessageInputProps): React.JSX.Element {
   // Handle emoji selection and make navigation bar scrollable
   useEffect(() => {
@@ -151,9 +149,7 @@ export default function FPMessageInput({
     const handleClickOutside = (event: MouseEvent) => {
       if (
         emojiPickerRef.current &&
-        !emojiPickerRef.current.contains(event.target as Node) &&
-        buttonRef.current &&
-        !buttonRef.current.contains(event.target as Node)
+        !emojiPickerRef.current.contains(event.target as Node)
       ) {
         onToggleEmojiPicker();
       }
@@ -164,20 +160,44 @@ export default function FPMessageInput({
       return () =>
         document.removeEventListener("click", handleClickOutside, true);
     }
-  }, [showEmojiPicker, emojiPickerRef, buttonRef, onToggleEmojiPicker]);
+  }, [showEmojiPicker, emojiPickerRef, onToggleEmojiPicker]);
+
+  // Determine if we should show send icon or mic icon
+  const hasText = typeof message === "string" ? message.trim() : message;
+  const shouldShowSend = hasText || !!draftAttachment;
 
   return (
     <div className="input-container">
       <div className="input-wrapper">
-        <div className="input-with-audio">
+        <div className="input-with-icons">
+          {/* Plus Icon on Left */}
+          <button
+            className="icon-btn plus-btn"
+            disabled={!selectedContact}
+            onClick={onToggleMediaPopup}
+            title="Attach media"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "0.5rem",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text)",
+              flexShrink: 0,
+            }}
+          >
+            <Plus size={24} />
+          </button>
+
+          {/* Input Field */}
           <input
             ref={inputRef}
             type="text"
-            key={`${peerId}-${inputResetKey}`} // Force remount when peer changes or after sending
+            key={`${peerId}-${inputResetKey}`}
             placeholder={
-              isEditing
-                ? "Edit message"
-                : draftAttachment && draftAttachment.type === "audio"
+              draftAttachment && draftAttachment.type === "audio"
                 ? "Add a caption (optional)"
                 : draftAttachment
                 ? "Add a caption (optional)"
@@ -194,7 +214,6 @@ export default function FPMessageInput({
             }
             onChange={(e) => {
               const text = e.target.value;
-              // Always call setMessage to ensure React detects the change
               if (draftAttachment) {
                 try {
                   const obj = JSON.parse(message) as { caption?: string };
@@ -204,14 +223,10 @@ export default function FPMessageInput({
                   setMessage(text);
                 }
               } else {
-                // Force update by always setting the message, even if it's the same
-                // This ensures React's controlled input properly tracks changes
                 setMessage(text);
               }
             }}
             onInput={(e) => {
-              // Additional safeguard: ensure input value is properly tracked
-              // This helps catch any edge cases where onChange might not fire
               const text = (e.target as HTMLInputElement).value;
               if (!draftAttachment && text !== message) {
                 setMessage(text);
@@ -221,90 +236,80 @@ export default function FPMessageInput({
             className="message-input"
             disabled={!selectedContact}
             autoFocus
+            style={{
+              flex: 1,
+              border: "none",
+              outline: "none",
+              padding: "0.75rem",
+              fontSize: "1rem",
+            }}
           />
-          {!(typeof message === "string" ? message.trim() : message) &&
-            !draftAttachment && (
-              <button
-                ref={audioBtnRef}
-                className="audio-btn"
-                disabled={!selectedContact || isRecording}
-                onClick={() => {
-                  if (!isRecording) {
-                    onStartAudioRecording();
-                  }
-                }}
-                onMouseDown={(e) => {
-                  if (!isRecording && selectedContact) {
-                    e.preventDefault();
-                    onStartAudioRecording();
-                  }
-                }}
-                title="Hold to record audio"
-              >
-                <svg
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
-                </svg>
-              </button>
-            )}
+
+          {/* Send/Mic Icon on Right */}
+          {shouldShowSend ? (
+            <button
+              className="icon-btn send-icon-btn"
+              onClick={onSend}
+              disabled={
+                !selectedContact ||
+                (!draftAttachment && !hasText)
+              }
+              title="Send message"
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "0.5rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text)",
+                flexShrink: 0,
+              }}
+            >
+              <Send size={24} />
+            </button>
+          ) : (
+            <button
+              ref={audioBtnRef}
+              className="icon-btn mic-icon-btn"
+              disabled={!selectedContact || isRecording}
+              onClick={() => {
+                if (!isRecording) {
+                  onStartAudioRecording();
+                }
+              }}
+              onMouseDown={(e) => {
+                if (!isRecording && selectedContact) {
+                  e.preventDefault();
+                  onStartAudioRecording();
+                }
+              }}
+              title="Hold to record audio"
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "0.5rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text)",
+                flexShrink: 0,
+              }}
+            >
+              <Mic size={24} />
+            </button>
+          )}
         </div>
       </div>
-      <div className="button-container">
-        <button
-          className="icon-btn attachment-btn"
-          disabled={!selectedContact}
-          onClick={onToggleMediaPopup}
-          title="Attach media"
-        >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.64 16.2a2 2 0 0 1-2.83-2.83l8.49-8.49" />
-          </svg>
-        </button>
-        <button
-          title="Attach emoji"
-          ref={buttonRef}
-          className="emoji-button"
-          onClick={onToggleEmojiPicker}
-        >
-          <Smile />
-        </button>
-        <button
-          className="send-button"
-          onClick={onSend}
-          disabled={
-            !selectedContact ||
-            (!draftAttachment &&
-              !(typeof message === "string" ? message.trim() : message))
-          }
-          title="Send message"
-        >
-          Send
-        </button>
 
-        {showEmojiPicker && (
-          <div ref={emojiPickerRef} className="emoji-picker-container">
-            <emoji-picker className="emoji-picker-element"></emoji-picker>
-          </div>
-        )}
-      </div>
+      {/* Emoji Picker - Keep below input */}
+      {showEmojiPicker && (
+        <div ref={emojiPickerRef} className="emoji-picker-container">
+          <emoji-picker className="emoji-picker-element"></emoji-picker>
+        </div>
+      )}
     </div>
   );
 }

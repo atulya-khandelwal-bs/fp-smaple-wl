@@ -23,10 +23,6 @@ interface Config {
     fetchCoaches: string;
     fetchConversations: string;
     fetchMessages: string;
-    sendMealPlanUpdate: string;
-    healthCoachChanged: string;
-    sendProducts: string;
-    sendGeneralNotification: string;
     summary: string;
     latestSummary: string;
     customMessage: string;
@@ -91,21 +87,6 @@ const config: Config = {
       return `${this.backend}/api/chat/fetch-messages`;
     },
 
-    get sendMealPlanUpdate(): string {
-      return `${this.backend}/api/chat/send-mean-plan-update-message`;
-    },
-
-    get healthCoachChanged(): string {
-      return `${this.backend}/api/chat/health-coach-changed-message`;
-    },
-
-    get sendProducts(): string {
-      return `${this.backend}/api/chat/send-product-message`;
-    },
-
-    get sendGeneralNotification(): string {
-      return `${this.backend}/api/chat/send-general-notification-message`;
-    },
     get summary(): string {
       return `${this.backend}/api/v1/summary`;
     },

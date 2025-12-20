@@ -22,7 +22,10 @@ interface FPCallMessageViewProps {
     redirect_url?: string;
     action_id?: string;
   }>;
-  onPlayVideo?: (videoUrl: string) => void;
+  onPlayVideo?: (
+    videoUrl: string,
+    callType?: "video_call" | "voice_call"
+  ) => void;
 }
 
 export default function FPCallMessageView({
@@ -42,7 +45,7 @@ export default function FPCallMessageView({
   const handlePlayVideo = (e: React.MouseEvent): void => {
     e.stopPropagation(); // Prevent triggering the parent onClick
     if (videoUrl && onPlayVideo) {
-      onPlayVideo(videoUrl);
+      onPlayVideo(videoUrl, callType);
     }
   };
 
@@ -171,8 +174,7 @@ export default function FPCallMessageView({
               e.currentTarget.style.opacity = "1";
             }}
           >
-            {/* {isVideoCall ? "Play Recording" : "Play Audio Recording"} */}
-            Play Recording
+            {isVideoCall ? "Play Video Recording" : "Play Audio Recording"}
           </button>
         </div>
       )}

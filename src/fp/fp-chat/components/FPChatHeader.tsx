@@ -1,19 +1,22 @@
-import { Video, Phone, ChevronDown } from "lucide-react";
+import {
+  Video,
+  Phone,
+  ChevronDown,
+  MoreVertical,
+  BadgeCheck,
+} from "lucide-react";
 import { Contact } from "../../common/types/chat";
 import React, { useState, useRef, useEffect } from "react";
+import config from "../../common/config.ts";
 
 interface FPChatHeaderProps {
   selectedContact: Contact | null;
-  activeTab: "Chat" | "Info" | "Description";
-  onTabChange: (tab: "Chat" | "Info" | "Description") => void;
   onBackToConversations?: (() => void) | null;
   onInitiateCall?: ((callType: "video" | "audio") => void) | null;
 }
 
 export default function FPChatHeader({
   selectedContact,
-  activeTab,
-  onTabChange,
   onBackToConversations,
   onInitiateCall,
 }: FPChatHeaderProps): React.JSX.Element {
@@ -91,22 +94,95 @@ export default function FPChatHeader({
             </svg>
           </button>
         )}
-        <div className="contact-info" style={{ flex: 1 }}>
-          <h2>{selectedContact?.name || "Select a Contact"}</h2>
-          <p>{selectedContact?.lastSeen || ""}</p>
+        <div
+          className="contact-info"
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+          }}
+        >
+          {/* Profile Picture */}
+          {selectedContact && (
+            <div
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                overflow: "hidden",
+                flexShrink: 0,
+              }}
+            >
+              <img
+                src={selectedContact.avatar || config.defaults.avatar}
+                alt={selectedContact.name}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                }}
+              />
+            </div>
+          )}
+          {/* Name and Nutritionist Badge */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                marginBottom: "0.25rem",
+              }}
+            >
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  textAlign: "left",
+                }}
+              >
+                {selectedContact?.name || "Select a Contact"}
+              </h2>
+              {/* Seal Check Icon */}
+              {selectedContact && (
+                <BadgeCheck
+                  size={18}
+                  style={{
+                    color: "#2563eb",
+                    flexShrink: 0,
+                  }}
+                />
+              )}
+            </div>
+            {/* Nutritionist Label */}
+            {selectedContact && (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.75rem",
+                  color: "#6b7280",
+                  fontWeight: 500,
+                  textAlign: "left",
+                }}
+              >
+                Nutritionist
+              </p>
+            )}
+          </div>
         </div>
-        {selectedContact && onInitiateCall && (
+        {selectedContact && (
           <div
-            ref={dropdownRef}
             style={{
-              position: "relative",
               display: "flex",
               alignItems: "center",
+              gap: "0.5rem",
             }}
           >
+            {/* Three Dot Menu Icon */}
             <button
-              onClick={toggleDropdown}
-              title="Start call"
+              title="More options"
               style={{
                 background: "none",
                 border: "none",
@@ -126,104 +202,119 @@ export default function FPChatHeader({
                 e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
-              <Video size={24} />
-              <ChevronDown size={16} style={{ marginLeft: "4px" }} />
+              <MoreVertical size={24} />
             </button>
-
-            {showDropdown && (
+            {/* Video Call Button
+            {onInitiateCall && (
               <div
+                ref={dropdownRef}
                 style={{
-                  position: "absolute",
-                  top: "100%",
-                  right: 0,
-                  marginTop: "0.5rem",
-                  background: "#FFFFFF",
-                  border: "1px solid #E5E7EB",
-                  borderRadius: "8px",
-                  boxShadow:
-                    "0px 4px 6px -1px rgba(0, 0, 0, 0.1), 0px 2px 4px -1px rgba(0, 0, 0, 0.06)",
-                  minWidth: "160px",
-                  zIndex: 1000,
-                  overflow: "hidden",
+                  position: "relative",
+                  display: "flex",
+                  alignItems: "center",
                 }}
               >
                 <button
-                  onClick={handleVideoCall}
+                  onClick={toggleDropdown}
+                  title="Start call"
                   style={{
-                    width: "100%",
-                    padding: "0.75rem 1rem",
-                    background: "transparent",
+                    background: "none",
                     border: "none",
+                    color: "var(--text)",
                     cursor: "pointer",
+                    padding: "0.5rem",
                     display: "flex",
                     alignItems: "center",
-                    gap: "0.75rem",
-                    color: "#111827",
-                    fontSize: "0.875rem",
+                    justifyContent: "center",
+                    borderRadius: "50%",
                     transition: "background-color 0.2s",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#F3F4F6";
+                    e.currentTarget.style.backgroundColor =
+                      "rgba(0, 0, 0, 0.05)";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor = "transparent";
                   }}
                 >
-                  <Video size={20} style={{ color: "#000" }} />
-                  <span>Video Call</span>
-                </button>
-                <button
-                  onClick={handleVoiceCall}
-                  style={{
-                    width: "100%",
-                    padding: "0.75rem 1rem",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.75rem",
-                    color: "#111827",
-                    fontSize: "0.875rem",
-                    borderTop: "1px solid #E5E7EB",
-                    transition: "background-color 0.2s",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#F3F4F6";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "transparent";
-                  }}
-                >
-                  <Phone size={20} style={{ color: "#000" }} />
-                  <span>Voice Call</span>
-                </button>
-              </div>
-            )}
+                  <Video size={24} />
+                  <ChevronDown size={16} style={{ marginLeft: "4px" }} />
+                </button> */}
+
+            {/* {showDropdown && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      right: 0,
+                      marginTop: "0.5rem",
+                      background: "#FFFFFF",
+                      border: "1px solid #E5E7EB",
+                      borderRadius: "8px",
+                      boxShadow:
+                        "0px 4px 6px -1px rgba(0, 0, 0, 0.1), 0px 2px 4px -1px rgba(0, 0, 0, 0.06)",
+                      minWidth: "160px",
+                      zIndex: 1000,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <button
+                      onClick={handleVideoCall}
+                      style={{
+                        width: "100%",
+                        padding: "0.75rem 1rem",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                        color: "#111827",
+                        fontSize: "0.875rem",
+                        transition: "background-color 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "#F3F4F6";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
+                    >
+                      <Video size={20} style={{ color: "#000" }} />
+                      <span>Video Call</span>
+                    </button>
+                    <button
+                      onClick={handleVoiceCall}
+                      style={{
+                        width: "100%",
+                        padding: "0.75rem 1rem",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                        color: "#111827",
+                        fontSize: "0.875rem",
+                        borderTop: "1px solid #E5E7EB",
+                        transition: "background-color 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "#F3F4F6";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }}
+                    >
+                      <Phone size={20} style={{ color: "#000" }} />
+                      <span>Voice Call</span>
+                    </button>
+                  </div>
+                )}*/}
+            {/* </div>
+            )} */}
           </div>
         )}
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="nav-tabs">
-        <button
-          className={`tab ${activeTab === "Chat" ? "active" : ""}`}
-          onClick={() => onTabChange("Chat")}
-        >
-          Chat
-        </button>
-        <button
-          className={`tab ${activeTab === "Info" ? "active" : ""}`}
-          onClick={() => onTabChange("Info")}
-        >
-          Info
-        </button>
-        <button
-          className={`tab ${activeTab === "Description" ? "active" : ""}`}
-          onClick={() => onTabChange("Description")}
-        >
-          Description
-        </button>
       </div>
     </>
   );

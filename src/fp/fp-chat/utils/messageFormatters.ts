@@ -734,11 +734,38 @@ export const formatMessage = (
           ? new Date(scheduledTime * 1000) // Convert seconds to milliseconds
           : null;
 
+        // Format date as "11 Aug 10:00 am" (12-hour format with AM/PM)
+        const formatScheduledDate = (date: Date): string => {
+          const day = date.getDate();
+          const monthNames = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+          ];
+          const month = monthNames[date.getMonth()];
+          let hours = date.getHours();
+          const minutes = date.getMinutes();
+          const ampm = hours >= 12 ? "pm" : "am";
+          hours = hours % 12;
+          hours = hours ? hours : 12; // the hour '0' should be '12'
+          const minutesStr = minutes < 10 ? `0${minutes}` : minutes;
+          return `${day} ${month} ${hours}:${minutesStr} ${ampm}`;
+        };
+
         const isCancelled = type === "scheduled_call_canceled";
         const displayText = isCancelled
           ? "Scheduled call cancelled"
           : scheduledDate
-          ? `Schedule ${scheduledDate.toLocaleString()}`
+          ? `Schedule, ${formatScheduledDate(scheduledDate)}`
           : "Call scheduled";
 
         return {

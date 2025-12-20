@@ -71,6 +71,12 @@ export interface FPCallUIProps {
   isAudioCall: boolean;
   onEndCall: (data?: CallEndData) => void;
   peerPresenceStatus?: "offline" | "waiting" | "in_call" | null;
+  // User info for avatar display
+  localUserName?: string;
+  localUserPhoto?: string;
+  localUserId?: string;
+  peerName?: string;
+  peerAvatar?: string;
 }
 
 export interface FPVideoCallingProps {
@@ -81,4 +87,8 @@ export interface FPVideoCallingProps {
   onEndCall: (data?: CallEndData) => void;
   isAudioCall?: boolean;
   peerPresenceStatus?: "offline" | "waiting" | "in_call" | null;
+  localUserName?: string;
+  localUserPhoto?: string;
+  peerName?: string;
+  peerAvatar?: string;
 }

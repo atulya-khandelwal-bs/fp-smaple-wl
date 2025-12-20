@@ -3,8 +3,6 @@ import axios from "axios";
 import config from "../../common/config.ts";
 import FPChatHeader from "./FPChatHeader";
 import FPChatTab from "./FPChatTab";
-import FPInfoTab from "./FPInfoTab";
-import FPDescriptionTab from "./FPDescriptionTab";
 import type { Connection } from "agora-chat";
 import FPMessageInput from "./FPMessageInput";
 import FPDraftAttachmentPreview from "./FPDraftAttachmentPreview";
@@ -13,13 +11,13 @@ import FPAudioRecordingOverlay from "./FPAudioRecordingOverlay";
 import FPCameraCaptureOverlay from "./FPCameraCaptureOverlay";
 import FPImageViewer from "./FPImageViewer";
 import FPVideoPlayer from "./FPVideoPlayer";
+import FPAudioPlayer from "./FPAudioPlayer";
 import {
   formatMessage,
-  // convertApiMessageToFormat,
+  convertApiMessageToFormat,
   parseSystemPayload,
   getSystemLabel,
 } from "../utils/messageFormatters.ts";
-import { editMessage } from "../utils/messageEditor.ts";
 
 // Import types from messageFormatters
 interface AgoraMessage {
@@ -51,19 +49,19 @@ interface AgoraMessage {
   [key: string]: unknown;
 }
 
-// interface ApiMessage {
-//   message_id?: string;
-//   conversation_id?: string;
-//   from_user?: string;
-//   to_user?: string;
-//   sender_name?: string;
-//   sender_photo?: string;
-//   message_type?: string;
-//   body?: string | object;
-//   created_at?: string | number;
-//   created_at_ms?: number;
-//   chat_type?: string;
-// }
+interface ApiMessage {
+  message_id?: string;
+  conversation_id?: string;
+  from_user?: string;
+  to_user?: string;
+  sender_name?: string;
+  sender_photo?: string;
+  message_type?: string;
+  body?: string | object;
+  created_at?: string | number;
+  created_at_ms?: number;
+  chat_type?: string;
+}
 import {
   Message,
   Contact,
@@ -104,11 +102,8 @@ export default function FPChatInterface({
   onBackToConversations,
   onInitiateCall,
   onUpdateLastMessageFromHistory,
-  coachInfo = { name: "", profilePhoto: "" },
+  coachInfo = { coachName: "", profilePhoto: "" },
 }: FPChatInterfaceProps): React.JSX.Element {
-  const [activeTab, setActiveTab] = useState<"Chat" | "Info" | "Description">(
-    "Chat"
-  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [showMediaPopup, setShowMediaPopup] = useState<boolean>(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
@@ -118,13 +113,13 @@ export default function FPChatInterface({
   const [cursor, setCursor] = useState<string | number | null>(null);
   const [isFetchingHistory, setIsFetchingHistory] = useState<boolean>(false);
   const [hasMore, setHasMore] = useState<boolean>(true);
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const [imageViewerUrl, setImageViewerUrl] = useState<string>("");
   const [imageViewerAlt, setImageViewerAlt] = useState<string>("");
   const [videoPlayerUrl, setVideoPlayerUrl] = useState<string>("");
+  const [audioPlayerUrl, setAudioPlayerUrl] = useState<string>("");
   const chatAreaRef = useRef<HTMLDivElement>(null);
   const mediaPopupRef = useRef<HTMLDivElement>(null);
   const demoMenuRef = useRef<HTMLDivElement>(null);
@@ -1615,45 +1610,6 @@ export default function FPChatInterface({
 
   const isSendingRef = useRef(false);
 
-  // Handle edit message
-  const handleEditMessage = (messageId: string, content: string): void => {
-    // Find the message to check if it's within the 10-minute edit window
-    const messageToEdit = messages.find((msg) => msg.id === messageId);
-
-    if (!messageToEdit) {
-      console.warn("Message not found for editing");
-      return;
-    }
-
-    // Check if message is within 10-minute edit window
-    if (messageToEdit.createdAt) {
-      const messageTime =
-        messageToEdit.createdAt instanceof Date
-          ? messageToEdit.createdAt.getTime()
-          : new Date(messageToEdit.createdAt).getTime();
-      const currentTime = Date.now();
-      const tenMinutesInMs = 10 * 60 * 1000; // 10 minutes in milliseconds
-
-      if (currentTime - messageTime > tenMinutesInMs) {
-        alert("This message can only be edited within 10 minutes of sending.");
-        return;
-      }
-    }
-
-    setEditingMessageId(messageId);
-    setMessage(content);
-    // Focus the input after a short delay to ensure it's rendered
-    setTimeout(() => {
-      if (inputRef.current) {
-        inputRef.current.focus();
-        inputRef.current.setSelectionRange(
-          inputRef.current.value.length,
-          inputRef.current.value.length
-        );
-      }
-    }, 100);
-  };
-
   const handleSendMessage = (): void => {
     // Prevent multiple simultaneous sends
     if (isSendingRef.current) {
@@ -1668,438 +1624,6 @@ export default function FPChatInterface({
         : currentMessage;
 
     if (!hasMessage && !draftAttachment) {
-      return;
-    }
-
-    // Check if we're editing a message
-    if (editingMessageId) {
-      const newTextContent =
-        typeof currentMessage === "string"
-          ? currentMessage.trim()
-          : String(currentMessage).trim();
-
-      if (!newTextContent) {
-        // If empty, just cancel editing
-        setEditingMessageId(null);
-        setMessage("");
-        return;
-      }
-
-      // Edit the message using Agora Chat SDK
-      if (
-        chatClient &&
-        typeof chatClient === "object" &&
-        "modifyMessage" in chatClient
-      ) {
-        // Mark as sending to prevent multiple edits
-        isSendingRef.current = true;
-
-        const messageToEdit = messages.find(
-          (msg) => msg.id === editingMessageId
-        );
-        console.log("📝 [FPChatInterface] Attempting to edit message:", {
-          editingMessageId,
-          newTextContent,
-          peerId,
-          messageToEdit: messageToEdit,
-          messageIdType: typeof editingMessageId,
-          isServerMsgId:
-            editingMessageId &&
-            !editingMessageId.startsWith("outgoing-") &&
-            !editingMessageId.startsWith("incoming-"),
-        });
-
-        // If we have a local ID (outgoing- or incoming-), try to find the server message ID
-        let serverMessageId = editingMessageId;
-        if (
-          editingMessageId &&
-          (editingMessageId.startsWith("outgoing-") ||
-            editingMessageId.startsWith("incoming-"))
-        ) {
-          console.log(
-            "🔍 [FPChatInterface] Local message ID detected, searching for server message ID..."
-          );
-
-          if (!messageToEdit) {
-            console.error(
-              "❌ [FPChatInterface] Message not found for editing:",
-              editingMessageId
-            );
-            alert("Message not found. Please try again.");
-            setEditingMessageId(null);
-            setMessage("");
-            isSendingRef.current = false; // Reset flag on error
-            return;
-          }
-
-          // Try to find a server message with matching content and sender
-          // This happens when the message has been synced with the server
-          console.log(
-            "🔍 [FPChatInterface] Searching for server message match:",
-            {
-              messageToEdit: {
-                id: messageToEdit.id,
-                content: messageToEdit.content,
-                sender: messageToEdit.sender,
-                peerId: messageToEdit.peerId,
-                createdAt: messageToEdit.createdAt,
-                messageType: messageToEdit.messageType,
-              },
-              totalMessages: messages.length,
-              serverMessages: messages.filter(
-                (m) =>
-                  !m.id.startsWith("outgoing-") && !m.id.startsWith("incoming-")
-              ).length,
-            }
-          );
-
-          const matchingServerMessage = messages.find((msg) => {
-            // Skip local messages
-            if (
-              msg.id.startsWith("outgoing-") ||
-              msg.id.startsWith("incoming-")
-            ) {
-              return false;
-            }
-
-            // Normalize content for comparison (trim whitespace)
-            const normalizeContent = (
-              content: string | null | undefined
-            ): string => {
-              if (!content) return "";
-              return String(content).trim();
-            };
-
-            const msgContent = normalizeContent(msg.content);
-            const editContent = normalizeContent(messageToEdit.content);
-
-            // Match by content and sender (for text messages)
-            // Use flexible matching: content should match (after normalization) and same sender/peerId
-            const contentMatch = msgContent === editContent;
-            const senderMatch = msg.sender === messageToEdit.sender;
-            const peerIdMatch = msg.peerId === messageToEdit.peerId;
-            const isTextMessage =
-              msg.messageType === "text" || !msg.messageType;
-
-            if (contentMatch && senderMatch && peerIdMatch && isTextMessage) {
-              // Check if timestamps are close (within 2 minutes for more flexibility)
-              if (msg.createdAt && messageToEdit.createdAt) {
-                const msgTime =
-                  msg.createdAt instanceof Date
-                    ? msg.createdAt.getTime()
-                    : new Date(msg.createdAt).getTime();
-                const editTime =
-                  messageToEdit.createdAt instanceof Date
-                    ? messageToEdit.createdAt.getTime()
-                    : new Date(messageToEdit.createdAt).getTime();
-                const timeDiff = Math.abs(msgTime - editTime);
-                // Increased tolerance to 2 minutes to handle sync delays
-                const matches = timeDiff < 120000; // 2 minutes tolerance
-                if (matches) {
-                  console.log("✅ [FPChatInterface] Found timestamp match:", {
-                    msgId: msg.id,
-                    msgTime: new Date(msgTime).toISOString(),
-                    editTime: new Date(editTime).toISOString(),
-                    timeDiff: timeDiff,
-                  });
-                }
-                return matches;
-              }
-              // If timestamps are missing, still match by content and sender
-              console.log(
-                "✅ [FPChatInterface] Found match without timestamp:",
-                {
-                  msgId: msg.id,
-                  contentMatch,
-                  senderMatch,
-                  peerIdMatch,
-                }
-              );
-              return true;
-            }
-            return false;
-          });
-
-          // If no exact match found, try a more flexible search by content only (for recently sent messages)
-          let flexibleMatch = null;
-          if (!matchingServerMessage && messageToEdit.content) {
-            const normalizeContent = (
-              content: string | null | undefined
-            ): string => {
-              if (!content) return "";
-              return String(content).trim();
-            };
-            const editContent = normalizeContent(messageToEdit.content);
-
-            console.log("🔍 [FPChatInterface] Trying flexible match:", {
-              editContent,
-              sender: messageToEdit.sender,
-              peerId: messageToEdit.peerId,
-            });
-
-            // Find any server message with matching content, same sender, and recent timestamp
-            flexibleMatch = messages.find((msg) => {
-              if (
-                msg.id.startsWith("outgoing-") ||
-                msg.id.startsWith("incoming-")
-              ) {
-                return false;
-              }
-
-              const msgContent = normalizeContent(msg.content);
-              const contentMatch = msgContent === editContent;
-              const senderMatch = msg.sender === messageToEdit.sender;
-              const peerIdMatch = msg.peerId === messageToEdit.peerId;
-
-              if (contentMatch && senderMatch && peerIdMatch) {
-                // Check if message is recent (within last 10 minutes for more flexibility)
-                if (msg.createdAt) {
-                  const msgTime =
-                    msg.createdAt instanceof Date
-                      ? msg.createdAt.getTime()
-                      : new Date(msg.createdAt).getTime();
-                  const now = Date.now();
-                  const timeDiff = now - msgTime;
-                  const isRecent = timeDiff < 600000; // 10 minutes
-                  if (isRecent) {
-                    console.log("✅ [FPChatInterface] Found flexible match:", {
-                      msgId: msg.id,
-                      timeDiff: timeDiff,
-                      isRecent,
-                    });
-                  }
-                  return isRecent;
-                }
-                // If no timestamp, still match if content and sender match
-                console.log(
-                  "✅ [FPChatInterface] Found flexible match (no timestamp):",
-                  {
-                    msgId: msg.id,
-                  }
-                );
-                return true;
-              }
-              return false;
-            });
-
-            if (flexibleMatch) {
-              console.log(
-                "✅ [FPChatInterface] Found server message ID (flexible match):",
-                flexibleMatch.id,
-                "for local message:",
-                editingMessageId
-              );
-            } else {
-              console.log("❌ [FPChatInterface] No flexible match found");
-            }
-          }
-
-          // Use exact match or flexible match
-          const finalMatch = matchingServerMessage || flexibleMatch;
-
-          if (finalMatch) {
-            // Use the message ID (which should be the mid if available)
-            serverMessageId = finalMatch.id;
-            console.log(
-              "✅ [FPChatInterface] Found server message ID:",
-              serverMessageId,
-              "for local message:",
-              editingMessageId,
-              "message object:",
-              {
-                id: finalMatch.id,
-                content: finalMatch.content?.substring(0, 50),
-                sender: finalMatch.sender,
-              }
-            );
-          } else {
-            // Log detailed info for debugging
-            console.warn(
-              "⚠️ [FPChatInterface] No server message match found. Details:",
-              {
-                editingMessageId,
-                messageContent: messageToEdit.content,
-                messageSender: messageToEdit.sender,
-                messagePeerId: messageToEdit.peerId,
-                messageCreatedAt: messageToEdit.createdAt,
-                availableServerMessages: messages
-                  .filter(
-                    (m) =>
-                      !m.id.startsWith("outgoing-") &&
-                      !m.id.startsWith("incoming-") &&
-                      m.sender === messageToEdit.sender &&
-                      m.peerId === messageToEdit.peerId
-                  )
-                  .map((m) => ({
-                    id: m.id,
-                    content: m.content?.substring(0, 50),
-                    createdAt: m.createdAt,
-                  })),
-              }
-            );
-            console.error(
-              "❌ [FPChatInterface] Could not find server message ID for local message:",
-              editingMessageId,
-              ". Message may not be synced yet."
-            );
-            alert(
-              "Cannot edit this message yet. Please wait a moment for it to sync with the server, then try again."
-            );
-            setEditingMessageId(null);
-            setMessage("");
-            isSendingRef.current = false; // Reset flag on error
-            return;
-          }
-        }
-
-        // Verify we have a valid server message ID
-        if (
-          !serverMessageId ||
-          serverMessageId.startsWith("outgoing-") ||
-          serverMessageId.startsWith("incoming-")
-        ) {
-          console.error(
-            "❌ [FPChatInterface] Invalid message ID for editing - must be serverMsgId, not local ID:",
-            serverMessageId
-          );
-          alert(
-            "Cannot edit this message. Please try again after the message is synced with the server."
-          );
-          setEditingMessageId(null);
-          setMessage("");
-          isSendingRef.current = false; // Reset flag on error
-          return;
-        }
-
-        editMessage({
-          chatClient: chatClient as unknown as Connection,
-          messageId: serverMessageId, // Use the server message ID
-          newText: newTextContent,
-          ext: {
-            senderName: coachInfo.name || userId,
-            senderProfile: coachInfo.profilePhoto || config.defaults.avatar,
-            isFromUser: false,
-          },
-          peerId: peerId || undefined,
-        })
-          .then((response) => {
-            console.log("✅ [FPChatInterface] Message edited successfully:", {
-              originalMessageId: editingMessageId,
-              serverMessageId: serverMessageId,
-              newContent: newTextContent,
-              response: response,
-              responseMessage: response.message,
-            });
-
-            // Update the message in the messages array - update both local and server message IDs
-            let updatedMessage: Message | null = null;
-            setMessages((prevMessages) => {
-              const updated = prevMessages.map((msg) => {
-                // Update the message with the server ID
-                if (msg.id === serverMessageId) {
-                  const updatedMsg = {
-                    ...msg,
-                    content: newTextContent,
-                    isEdited: true,
-                  };
-                  updatedMessage = updatedMsg;
-                  return updatedMsg;
-                }
-                // Also update the local message ID if it exists (for immediate UI update)
-                if (msg.id === editingMessageId) {
-                  const updatedMsg = {
-                    ...msg,
-                    content: newTextContent,
-                    isEdited: true,
-                  };
-                  // Only set updatedMessage if we haven't found the server message yet
-                  if (!updatedMessage) {
-                    updatedMessage = updatedMsg;
-                  }
-                  return updatedMsg;
-                }
-                return msg;
-              });
-              return updated;
-            });
-
-            // Update conversation preview if this message exists and is for the current peer
-            // The updateLastMessageFromHistory function will only update if this is the most recent message
-            if (updatedMessage && peerId && onUpdateLastMessageFromHistory) {
-              const msgForLog: Message = updatedMessage;
-              console.log(
-                "🔄 [FPChatInterface] Updating conversation preview with edited message:",
-                {
-                  peerId,
-                  messageId: msgForLog.id,
-                  content: msgForLog.content,
-                  sender: msgForLog.sender,
-                  createdAt: msgForLog.createdAt,
-                  isEdited: msgForLog.isEdited,
-                }
-              );
-              onUpdateLastMessageFromHistory(peerId, updatedMessage);
-            } else {
-              const hasUpdatedMessage = !!updatedMessage;
-              const hasOnUpdateLastMessageFromHistory =
-                !!onUpdateLastMessageFromHistory;
-              console.warn(
-                "⚠️ [FPChatInterface] Cannot update conversation preview:",
-                {
-                  hasUpdatedMessage,
-                  peerId,
-                  hasOnUpdateLastMessageFromHistory,
-                }
-              );
-            }
-
-            // Clear edit mode
-            setEditingMessageId(null);
-            setMessage("");
-
-            // Show success message
-            console.log("✅ Edit completed and UI updated");
-          })
-          .catch((error) => {
-            console.error("❌ [FPChatInterface] Error editing message:", {
-              messageId: editingMessageId,
-              error: error,
-              errorMessage:
-                error instanceof Error ? error.message : String(error),
-              errorStack: error instanceof Error ? error.stack : undefined,
-            });
-            // Optionally show an error message to the user
-            alert(
-              `Failed to edit message: ${
-                error instanceof Error ? error.message : "Unknown error"
-              }`
-            );
-            // Reset edit mode and flag on error
-            setEditingMessageId(null);
-            setMessage("");
-            isSendingRef.current = false; // Reset flag immediately on error
-          })
-          .finally(() => {
-            // Reset the flag after edit completes (as backup, but should already be reset)
-            isSendingRef.current = false;
-          });
-      } else {
-        // Fallback: just update local state if chatClient is not available
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) =>
-            msg.id === editingMessageId
-              ? {
-                  ...msg,
-                  content: newTextContent,
-                  isEdited: true,
-                }
-              : msg
-          )
-        );
-        setEditingMessageId(null);
-        setMessage("");
-      }
-
       return;
     }
 
@@ -2876,15 +2400,31 @@ export default function FPChatInterface({
     document.body.style.overflow = "";
   };
 
-  // Video player helpers
-  const openVideoPlayer = (videoUrl: string): void => {
+  // Video/Audio player helpers
+  const openVideoPlayer = (
+    videoUrl: string,
+    callType?: "video_call" | "voice_call"
+  ): void => {
     if (!videoUrl) return;
-    setVideoPlayerUrl(videoUrl);
+
+    // Open recording in the same tab using existing player components
+    const type = callType || "video_call";
+    if (type === "voice_call") {
+      setAudioPlayerUrl(videoUrl);
+    } else {
+      setVideoPlayerUrl(videoUrl);
+    }
+    // Lock background scroll when player is open
     document.body.style.overflow = "hidden";
   };
 
   const closeVideoPlayer = (): void => {
     setVideoPlayerUrl("");
+    document.body.style.overflow = "";
+  };
+
+  const closeAudioPlayer = (): void => {
+    setAudioPlayerUrl("");
     document.body.style.overflow = "";
   };
 
@@ -2904,6 +2444,16 @@ export default function FPChatInterface({
         ? peerId.replace("user_", "")
         : peerId;
 
+      // Fetch from both Agora and API in parallel
+      const conversationId = peerId.startsWith("user_")
+        ? peerId
+        : `user_${peerId}`;
+
+      // Prepare API fetch
+      const apiUrl = new URL(config.api.fetchMessages);
+      apiUrl.searchParams.append("conversationId", conversationId);
+      apiUrl.searchParams.append("limit", String(config.chat.pageSize || 20));
+
       // Cast chatClient to Connection type to access getHistoryMessages
       const client = chatClient as Connection & {
         getHistoryMessages?: (options: {
@@ -2917,36 +2467,85 @@ export default function FPChatInterface({
         }>;
       };
 
-      if (!client.getHistoryMessages) {
-        console.error("getHistoryMessages method not available on chatClient");
-        return;
+      // Fetch from both sources in parallel
+      const [agoraResult, apiResult] = await Promise.allSettled([
+        // Fetch from Agora Chat
+        client.getHistoryMessages
+          ? client.getHistoryMessages({
+              targetId: targetId,
+              chatType: "singleChat",
+              pageSize: config.chat.pageSize || 20,
+              searchDirection: "up",
+            })
+          : Promise.resolve({ messages: [], cursor: undefined }),
+        // Fetch from API
+        fetch(apiUrl.toString()).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to fetch messages: ${response.status}`);
+          }
+          return response.json();
+        }),
+      ]);
+
+      // Process Agora messages
+      let agoraMessages: AgoraMessage[] = [];
+      let agoraCursor: string | undefined;
+      if (agoraResult.status === "fulfilled") {
+        const agoraRes = agoraResult.value;
+        agoraMessages = (agoraRes?.messages || []) as AgoraMessage[];
+        agoraCursor = agoraRes?.cursor;
+        console.log("📥 [fetchInitialMessages] Agora Response received:", {
+          targetId,
+          hasCursor: !!agoraCursor,
+          cursor: agoraCursor,
+          messagesCount: agoraMessages.length,
+        });
+      } else {
+        console.warn(
+          "❌ [fetchInitialMessages] Agora fetch failed:",
+          agoraResult.reason
+        );
       }
 
-      // Fetch messages from Agora Chat
-      const res = await client.getHistoryMessages({
-        targetId: targetId,
-        chatType: "singleChat", // One-to-one chat
-        pageSize: config.chat.pageSize || 20,
-        searchDirection: "up", // Descending order (newest first)
-      });
+      // Process API messages
+      let apiMessages: ApiMessage[] = [];
+      let apiCursor: string | undefined;
+      if (apiResult.status === "fulfilled") {
+        const apiRes = apiResult.value;
+        apiMessages = apiRes?.messages || [];
+        apiCursor = apiRes?.nextCursor;
+        console.log("📥 [fetchInitialMessages] API Response received:", {
+          url: apiUrl.toString(),
+          conversationId,
+          hasNextCursor: !!apiCursor,
+          nextCursor: apiCursor,
+          messagesCount: apiMessages.length,
+        });
+      } else {
+        console.warn(
+          "❌ [fetchInitialMessages] API fetch failed:",
+          apiResult.reason
+        );
+      }
 
-      console.log("📥 [fetchInitialMessages] Agora Response received:", {
-        targetId,
-        hasCursor: !!res.cursor,
-        cursor: res.cursor,
-        messagesCount: res?.messages?.length || 0,
-        rawResponse: res,
-      });
-
-      // Set cursor for pagination
-      if (res.cursor) {
-        setCursor(res.cursor);
+      // Set cursor for pagination (use Agora cursor if available, otherwise API cursor)
+      const combinedCursor = agoraCursor || apiCursor;
+      if (combinedCursor) {
+        setCursor(combinedCursor);
         setHasMore(true);
       } else {
         setHasMore(false);
       }
 
-      const oldMessages = (res?.messages || []) as AgoraMessage[];
+      // Convert API messages to Agora format
+      const convertedApiMessages = apiMessages
+        .map((msg: unknown) => convertApiMessageToFormat(msg as ApiMessage))
+        .filter(
+          (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
+        );
+
+      // Combine messages from both sources
+      const oldMessages = [...agoraMessages, ...convertedApiMessages];
 
       // 🔍 Detailed console log of all received messages
       console.log(
@@ -2976,90 +2575,30 @@ export default function FPChatInterface({
         }
       );
 
-      // ========== COMMENTED OUT: API FETCHING CODE (for testing) ==========
-      // // Build URL with query parameters
-      // // Format conversationId as "user_{peerId}" as required by the API
-      // const conversationId = peerId.startsWith("user_")
-      //   ? peerId
-      //   : `user_${peerId}`;
-      // const url = new URL(config.api.fetchMessages);
-      // url.searchParams.append("conversationId", conversationId);
-      // url.searchParams.append("limit", String(config.chat.pageSize || 20));
+      console.log(
+        "📨 [fetchInitialMessages] Combined messages from both sources:",
+        {
+          agoraCount: agoraMessages.length,
+          apiCount: apiMessages.length,
+          totalCount: oldMessages.length,
+          messages: oldMessages.map((msg: AgoraMessage) => {
+            return {
+              id: msg.id,
+              type: msg.type,
+              from: msg.from,
+              to: msg.to,
+              time: msg.time,
+              msg: msg.msg,
+              body: msg.body,
+            };
+          }),
+        }
+      );
 
-      // const response = await fetch(url.toString());
-
-      // if (!response.ok) {
-      //   throw new Error(`Failed to fetch messages: ${response.status}`);
-      // }
-
-      // const res = await response.json();
-
-      // console.log("📥 [fetchInitialMessages] API Response received:", {
-      //   url: url.toString(),
-      //   conversationId,
-      //   responseStatus: response.status,
-      //   hasNextCursor: !!res.nextCursor,
-      //   nextCursor: res.nextCursor,
-      //   messagesCount: res?.messages?.length || 0,
-      //   rawResponse: res,
-      // });
-
-      // // Set cursor for pagination (nextCursor is the timestamp of the last message)
-      // if (res.nextCursor) {
-      //   setCursor(res.nextCursor);
-      //   setHasMore(true);
-      // } else {
-      //   setHasMore(false);
-      // }
-
-      // const oldMessages = res?.messages || [];
-      // ========== END OF COMMENTED API CODE ==========
-
-      console.log("📨 [fetchInitialMessages] Raw messages from Agora:", {
-        count: oldMessages.length,
-        messages: oldMessages.map((msg: AgoraMessage) => {
-          return {
-            id: msg.id,
-            type: msg.type,
-            from: msg.from,
-            to: msg.to,
-            time: msg.time,
-            msg: msg.msg,
-            body: msg.body,
-          };
-        }),
-      });
-
-      // Agora messages are already in AgoraMessage format, no conversion needed
       // Filter out null messages (healthCoachChanged, mealPlanUpdate, etc.)
       const convertedMessages = oldMessages.filter(
         (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
       );
-
-      // ========== COMMENTED OUT: API MESSAGE CONVERSION (for testing) ==========
-      // console.log("📨 [fetchInitialMessages] Raw messages from API:", {
-      //   count: oldMessages.length,
-      //   messages: oldMessages.map((msg: unknown) => {
-      //     const apiMsg = msg as ApiMessage;
-      //     return {
-      //       message_id: apiMsg.message_id,
-      //       message_type: apiMsg.message_type,
-      //       body: apiMsg.body,
-      //       from_user: apiMsg.from_user,
-      //       to_user: apiMsg.to_user,
-      //       created_at: apiMsg.created_at,
-      //       created_at_ms: apiMsg.created_at_ms,
-      //     };
-      //   }),
-      // });
-
-      // // Convert API messages to format expected by formatMessage
-      // const convertedMessages = oldMessages
-      //   .map((msg: unknown) => convertApiMessageToFormat(msg as ApiMessage))
-      //   .filter(
-      //     (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
-      //   ); // Filter out null messages (healthCoachChanged, mealPlanUpdate, etc.)
-      // ========== END OF COMMENTED API CODE ==========
 
       console.log("🔄 [fetchInitialMessages] Converted messages:", {
         count: convertedMessages.length,
@@ -3091,10 +2630,23 @@ export default function FPChatInterface({
         })),
       });
 
-      // 🟢 DEDUPLICATE products messages: Filter out duplicates based on product IDs
-      // This prevents the same products message from appearing twice (array vs stringified format)
-      const seenProductKeys = new Set();
+      // 🟢 DEDUPLICATE messages by ID: Filter out duplicates from both Agora and API
+      // This prevents the same message from appearing twice when fetched from both sources
+      const seenMessageIds = new Set<string>();
       const deduplicatedFormatted = formatted.filter((msg: Message) => {
+        // Use message ID for deduplication
+        if (msg.id) {
+          if (seenMessageIds.has(msg.id)) {
+            console.log(
+              "🔄 [fetchInitialMessages] Duplicate message filtered:",
+              msg.id
+            );
+            return false; // Filter out duplicate
+          }
+          seenMessageIds.add(msg.id);
+        }
+
+        // Also deduplicate products messages by product IDs (existing logic)
         if (msg.messageType === "products" && msg.products) {
           // Extract first product ID for deduplication key
           let firstProductId = "";
@@ -3113,13 +2665,19 @@ export default function FPChatInterface({
 
           if (firstProductId) {
             const key = `products-${firstProductId}-${msg.sender}`;
-            if (seenProductKeys.has(key)) {
+            if (seenMessageIds.has(key)) {
               return false; // Filter out duplicate
             }
-            seenProductKeys.add(key);
+            seenMessageIds.add(key);
           }
         }
-        return true; // Keep all non-products messages and products without ID
+        return true; // Keep all messages that pass deduplication
+      });
+
+      console.log("🔄 [fetchInitialMessages] Deduplication result:", {
+        before: formatted.length,
+        after: deduplicatedFormatted.length,
+        duplicatesRemoved: formatted.length - deduplicatedFormatted.length,
       });
 
       // Find the most recent message from history to update last message
@@ -3490,6 +3048,11 @@ export default function FPChatInterface({
 
         return finalMessages;
       });
+
+      // Scroll to bottom after initial messages are loaded
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
     } catch (err) {
       console.error(
         "❌ [fetchInitialMessages] Error fetching initial messages:",
@@ -3513,6 +3076,19 @@ export default function FPChatInterface({
         ? peerId.replace("user_", "")
         : peerId;
 
+      // Fetch from both Agora and API in parallel
+      const conversationId = peerId.startsWith("user_")
+        ? peerId
+        : `user_${peerId}`;
+
+      // Prepare API fetch
+      const apiUrl = new URL(config.api.fetchMessages);
+      apiUrl.searchParams.append("conversationId", conversationId);
+      apiUrl.searchParams.append("limit", "20");
+      if (cursor) {
+        apiUrl.searchParams.append("cursor", String(cursor));
+      }
+
       // Cast chatClient to Connection type to access getHistoryMessages
       const client = chatClient as Connection & {
         getHistoryMessages?: (options: {
@@ -3527,34 +3103,93 @@ export default function FPChatInterface({
         }>;
       };
 
-      if (!client.getHistoryMessages) {
-        console.error("getHistoryMessages method not available on chatClient");
-        setIsFetchingHistory(false);
-        return;
+      // Fetch from both sources in parallel
+      const [agoraResult, apiResult] = await Promise.allSettled([
+        // Fetch from Agora Chat
+        client.getHistoryMessages
+          ? client.getHistoryMessages({
+              targetId: targetId,
+              chatType: "singleChat",
+              pageSize: 20,
+              searchDirection: "up",
+              cursor: cursor ? String(cursor) : undefined,
+            })
+          : Promise.resolve({ messages: [], cursor: undefined }),
+        // Fetch from API
+        fetch(apiUrl.toString()).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to fetch messages: ${response.status}`);
+          }
+          return response.json();
+        }),
+      ]);
+
+      // Process Agora messages
+      let agoraMessages: AgoraMessage[] = [];
+      let agoraCursor: string | undefined;
+      if (agoraResult.status === "fulfilled") {
+        const agoraRes = agoraResult.value;
+        agoraMessages = (agoraRes?.messages || []) as AgoraMessage[];
+        agoraCursor = agoraRes?.cursor;
+        console.log("📥 [fetchMoreMessages] Agora Response received:", {
+          targetId,
+          cursor,
+          hasCursor: !!agoraCursor,
+          nextCursor: agoraCursor,
+          messagesCount: agoraMessages.length,
+        });
+      } else {
+        console.warn(
+          "❌ [fetchMoreMessages] Agora fetch failed:",
+          agoraResult.reason
+        );
       }
 
-      // Fetch more messages from Agora Chat using cursor for pagination
-      const res = await client.getHistoryMessages({
-        targetId: targetId,
-        chatType: "singleChat", // One-to-one chat
-        pageSize: 20,
-        searchDirection: "up", // Descending order (newest first)
-        cursor: cursor ? String(cursor) : undefined, // Use cursor for pagination
-      });
+      // Process API messages
+      let apiMessages: ApiMessage[] = [];
+      let apiCursor: string | undefined;
+      if (apiResult.status === "fulfilled") {
+        const apiRes = apiResult.value;
+        apiMessages = apiRes?.messages || [];
+        apiCursor = apiRes?.nextCursor;
+        console.log("📥 [fetchMoreMessages] API Response received:", {
+          url: apiUrl.toString(),
+          conversationId,
+          cursor,
+          hasNextCursor: !!apiCursor,
+          nextCursor: apiCursor,
+          messagesCount: apiMessages.length,
+        });
+      } else {
+        console.warn(
+          "❌ [fetchMoreMessages] API fetch failed:",
+          apiResult.reason
+        );
+      }
 
-      console.log("📥 [fetchMoreMessages] Agora Response received:", {
-        targetId,
-        cursor,
-        hasCursor: !!res.cursor,
-        nextCursor: res.cursor,
-        messagesCount: res?.messages?.length || 0,
-      });
+      // Convert API messages to Agora format
+      const convertedApiMessages = apiMessages
+        .map((msg: unknown) => convertApiMessageToFormat(msg as ApiMessage))
+        .filter(
+          (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
+        );
 
-      const newMessages = (res?.messages || []) as AgoraMessage[];
+      // Combine messages from both sources
+      const newMessages = [...agoraMessages, ...convertedApiMessages];
+
       if (newMessages.length === 0) {
         setHasMore(false);
         setIsFetchingHistory(false);
         return;
+      }
+
+      // Set cursor for next pagination (use Agora cursor if available, otherwise API cursor)
+      const combinedCursor = agoraCursor || apiCursor;
+      if (combinedCursor) {
+        setCursor(combinedCursor);
+        setHasMore(true);
+      } else {
+        setHasMore(false);
       }
 
       // 🔍 Detailed console log of all received messages
@@ -3582,91 +3217,10 @@ export default function FPChatInterface({
         }),
       });
 
-      // Set cursor for next pagination
-      if (res.cursor) {
-        setCursor(res.cursor);
-        setHasMore(true);
-      } else {
-        setHasMore(false);
-      }
-
-      // Agora messages are already in AgoraMessage format, no conversion needed
       // Filter out null messages (healthCoachChanged, mealPlanUpdate, etc.)
       const convertedMessages = newMessages.filter(
         (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
       );
-
-      // ========== COMMENTED OUT: API FETCHING CODE (for testing) ==========
-      // // Build URL with query parameters
-      // // Format conversationId as "user_{peerId}" as required by the API
-      // const conversationId = peerId.startsWith("user_")
-      //   ? peerId
-      //   : `user_${peerId}`;
-      // const url = new URL(config.api.fetchMessages);
-      // url.searchParams.append("conversationId", conversationId);
-      // url.searchParams.append("limit", "20");
-
-      // // Add cursor if available (for pagination)
-      // if (cursor) {
-      //   url.searchParams.append("cursor", String(cursor));
-      // }
-
-      // const response = await fetch(url.toString());
-
-      // if (!response.ok) {
-      //   throw new Error(`Failed to fetch more messages: ${response.status}`);
-      // }
-
-      // const res = await response.json();
-
-      // console.log("📥 [fetchMoreMessages] API Response received:", {
-      //   url: url.toString(),
-      //   conversationId,
-      //   cursor,
-      //   responseStatus: response.status,
-      //   hasNextCursor: !!res.nextCursor,
-      //   nextCursor: res.nextCursor,
-      //   messagesCount: res?.messages?.length || 0,
-      // });
-
-      // const newMessages = res?.messages || [];
-      // if (newMessages.length === 0) {
-      //   setHasMore(false);
-      //   setIsFetchingHistory(false);
-      //   return;
-      // }
-
-      // console.log("📨 [fetchMoreMessages] Raw messages from API:", {
-      //   count: newMessages.length,
-      //   messages: newMessages.map((msg: unknown) => {
-      //     const apiMsg = msg as ApiMessage;
-      //     return {
-      //       message_id: apiMsg.message_id,
-      //       message_type: apiMsg.message_type,
-      //       body: apiMsg.body,
-      //       from_user: apiMsg.from_user,
-      //       to_user: apiMsg.to_user,
-      //       created_at: apiMsg.created_at,
-      //       created_at_ms: apiMsg.created_at_ms,
-      //     };
-      //   }),
-      // });
-
-      // // Set cursor for next pagination
-      // if (res.nextCursor) {
-      //   setCursor(res.nextCursor);
-      //   setHasMore(true);
-      // } else {
-      //   setHasMore(false);
-      // }
-
-      // // Convert API messages to format expected by formatMessage
-      // const convertedMessages = newMessages
-      //   .map((msg: unknown) => convertApiMessageToFormat(msg as ApiMessage))
-      //   .filter(
-      //     (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
-      //   ); // Filter out null messages (healthCoachChanged, mealPlanUpdate, etc.)
-      // ========== END OF COMMENTED API CODE ==========
       const formatted = convertedMessages
         .map((msg: AgoraMessage) =>
           formatMessage(msg, userId, peerId || "", selectedContact, coachInfo)
@@ -3687,10 +3241,23 @@ export default function FPChatInterface({
         })),
       });
 
-      // 🟢 DEDUPLICATE products messages: Filter out duplicates based on product IDs
-      // This prevents the same products message from appearing twice (array vs stringified format)
-      const seenProductKeys = new Set();
+      // 🟢 DEDUPLICATE messages by ID: Filter out duplicates from both Agora and API
+      // This prevents the same message from appearing twice when fetched from both sources
+      const seenMessageIds = new Set<string>();
       const deduplicatedFormatted = formatted.filter((msg: Message) => {
+        // Use message ID for deduplication
+        if (msg.id) {
+          if (seenMessageIds.has(msg.id)) {
+            console.log(
+              "🔄 [fetchMoreMessages] Duplicate message filtered:",
+              msg.id
+            );
+            return false; // Filter out duplicate
+          }
+          seenMessageIds.add(msg.id);
+        }
+
+        // Also deduplicate products messages by product IDs (existing logic)
         if (msg.messageType === "products" && msg.products) {
           // Extract first product ID for deduplication key
           let firstProductId = "";
@@ -3709,13 +3276,19 @@ export default function FPChatInterface({
 
           if (firstProductId) {
             const key = `products-${firstProductId}-${msg.sender}`;
-            if (seenProductKeys.has(key)) {
+            if (seenMessageIds.has(key)) {
               return false; // Filter out duplicate
             }
-            seenProductKeys.add(key);
+            seenMessageIds.add(key);
           }
         }
-        return true; // Keep all non-products messages and products without ID
+        return true; // Keep all messages that pass deduplication
+      });
+
+      console.log("🔄 [fetchMoreMessages] Deduplication result:", {
+        before: formatted.length,
+        after: deduplicatedFormatted.length,
+        duplicatesRemoved: formatted.length - deduplicatedFormatted.length,
       });
 
       // 🟡 Prevent scroll-to-bottom behavior
@@ -3952,7 +3525,7 @@ export default function FPChatInterface({
         return [...unique, ...prev];
       });
 
-      // 🧭 Maintain exact scroll position
+      // 🧭 Maintain exact scroll position when loading more messages
       requestAnimationFrame(() => {
         if (!chatArea) return;
         const newScrollHeight = chatArea.scrollHeight || 0;
@@ -3977,8 +3550,6 @@ export default function FPChatInterface({
     <div className="chat-interface">
       <FPChatHeader
         selectedContact={selectedContact}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
         onBackToConversations={onBackToConversations}
         onInitiateCall={onInitiateCall}
       />
@@ -4016,138 +3587,74 @@ export default function FPChatInterface({
           </div>
         )}
 
-        {activeTab === "Chat" && (
-          <FPChatTab
-            peerId={peerId || ""}
-            currentConversationMessages={currentConversationMessages}
-            selectedContact={selectedContact}
-            userId={userId}
-            formatDateLabel={formatDateLabel}
-            formatCurrency={formatCurrency}
-            openImageViewer={openImageViewer}
-            currentlyPlayingAudioRef={currentlyPlayingAudioRef}
-            onEdit={handleEditMessage}
-            onPlayVideo={openVideoPlayer}
-          />
-        )}
-        {activeTab === "Info" && (
-          <FPInfoTab selectedContact={selectedContact} />
-        )}
-        {activeTab === "Description" && (
-          <FPDescriptionTab
-            selectedContact={selectedContact}
-            chatClient={chatClient as Connection | null}
-            peerId={peerId}
-            userId={userId}
-          />
-        )}
+        <FPChatTab
+          peerId={peerId || ""}
+          currentConversationMessages={currentConversationMessages}
+          selectedContact={selectedContact}
+          userId={userId}
+          formatDateLabel={formatDateLabel}
+          formatCurrency={formatCurrency}
+          openImageViewer={openImageViewer}
+          currentlyPlayingAudioRef={currentlyPlayingAudioRef}
+          onPlayVideo={openVideoPlayer}
+        />
       </div>
 
-      {/* Message Input - Only show on Chat tab */}
-      {activeTab === "Chat" && (
-        <div className="message-input-area">
-          {uploadProgress !== null && (
+      {/* Message Input */}
+      <div className="message-input-area">
+        {uploadProgress !== null && (
+          <div
+            style={{
+              width: "100%",
+              background: "#e5e7eb",
+              borderRadius: 4,
+              overflow: "hidden",
+              marginBottom: 8,
+              height: 8,
+            }}
+          >
             <div
               style={{
-                width: "100%",
-                background: "#e5e7eb",
-                borderRadius: 4,
-                overflow: "hidden",
-                marginBottom: 8,
-                height: 8,
+                width: `${uploadProgress}%`,
+                height: "100%",
+                background: "#2563eb",
+                transition: "width 0.3s ease",
               }}
-            >
-              <div
-                style={{
-                  width: `${uploadProgress}%`,
-                  height: "100%",
-                  background: "#2563eb",
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-          )}
+            />
+          </div>
+        )}
 
-          {/* Edit mode indicator */}
-          {editingMessageId && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "8px 12px",
-                background: "#fef3c7",
-                border: "1px solid #fbbf24",
-                borderRadius: "6px",
-                marginBottom: "8px",
-                fontSize: "0.875rem",
-              }}
-            >
-              <span style={{ color: "#92400e", fontWeight: 500 }}>
-                Editing message
-              </span>
-              <button
-                onClick={() => {
-                  setEditingMessageId(null);
-                  setMessage("");
-                }}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#92400e",
-                  cursor: "pointer",
-                  padding: "4px 8px",
-                  borderRadius: "4px",
-                  fontSize: "0.875rem",
-                  fontWeight: 500,
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.background =
-                    "rgba(146, 64, 14, 0.1)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.background =
-                    "transparent";
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
+        <FPDraftAttachmentPreview
+          draftAttachment={draftAttachment}
+          onRemove={clearDraftAttachment}
+          onImageClick={openImageViewer}
+          formatDuration={formatDuration}
+          currentlyPlayingAudioRef={currentlyPlayingAudioRef}
+        />
 
-          <FPDraftAttachmentPreview
-            draftAttachment={draftAttachment}
-            onRemove={clearDraftAttachment}
-            onImageClick={openImageViewer}
-            formatDuration={formatDuration}
-            currentlyPlayingAudioRef={currentlyPlayingAudioRef}
-          />
-
-          <FPMessageInput
-            message={message}
-            setMessage={
-              setMessage as (msg: string | ((prev: string) => string)) => void
-            }
-            draftAttachment={draftAttachment}
-            getDraftCaption={getDraftCaption}
-            selectedContact={selectedContact}
-            isRecording={isRecording}
-            peerId={peerId || ""}
-            inputResetKey={inputResetKey}
-            onSend={handleSendMessage}
-            onKeyPress={handleKeyPress}
-            onStartAudioRecording={startAudioRecording}
-            onToggleMediaPopup={() => setShowMediaPopup(!showMediaPopup)}
-            onToggleEmojiPicker={toggleEmojiPicker}
-            showEmojiPicker={showEmojiPicker}
-            audioBtnRef={audioBtnRef as React.RefObject<HTMLButtonElement>}
-            inputRef={inputRef as React.RefObject<HTMLInputElement>}
-            buttonRef={buttonRef as React.RefObject<HTMLButtonElement>}
-            emojiPickerRef={emojiPickerRef as React.RefObject<HTMLDivElement>}
-            isEditing={!!editingMessageId}
-          />
-        </div>
-      )}
+        <FPMessageInput
+          message={message}
+          setMessage={
+            setMessage as (msg: string | ((prev: string) => string)) => void
+          }
+          draftAttachment={draftAttachment}
+          getDraftCaption={getDraftCaption}
+          selectedContact={selectedContact}
+          isRecording={isRecording}
+          peerId={peerId || ""}
+          inputResetKey={inputResetKey}
+          onSend={handleSendMessage}
+          onKeyPress={handleKeyPress}
+          onStartAudioRecording={startAudioRecording}
+          onToggleMediaPopup={() => setShowMediaPopup(!showMediaPopup)}
+          onToggleEmojiPicker={toggleEmojiPicker}
+          showEmojiPicker={showEmojiPicker}
+          audioBtnRef={audioBtnRef as React.RefObject<HTMLButtonElement>}
+          inputRef={inputRef as React.RefObject<HTMLInputElement>}
+          buttonRef={buttonRef as React.RefObject<HTMLButtonElement>}
+          emojiPickerRef={emojiPickerRef as React.RefObject<HTMLDivElement>}
+        />
+      </div>
 
       {/* Media Upload Popup */}
       <FPMediaPopup
@@ -4182,6 +3689,9 @@ export default function FPChatInterface({
 
       {/* Video Player */}
       <FPVideoPlayer videoUrl={videoPlayerUrl} onClose={closeVideoPlayer} />
+
+      {/* Audio Player for Voice Recordings */}
+      <FPAudioPlayer audioUrl={audioPlayerUrl} onClose={closeAudioPlayer} />
 
       {/* Hidden file inputs */}
       <input

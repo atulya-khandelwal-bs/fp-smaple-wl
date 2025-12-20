@@ -3,11 +3,13 @@ import React from "react";
 interface FPProductMessageViewProps {
   products: Product[];
   formatCurrency: (amount: number) => string;
+  isIncoming?: boolean;
 }
 
 export default function FPProductMessageView({
   products,
   formatCurrency,
+  isIncoming = false,
 }: FPProductMessageViewProps): React.JSX.Element | null {
   return (
     <div
@@ -71,7 +73,7 @@ export default function FPProductMessageView({
                 }
               }}
             >
-              {/* Product Image - Left Side */}
+              {/* Product Image - Left Side with White Background */}
               <div
                 style={{
                   width: "112px",
@@ -79,11 +81,12 @@ export default function FPProductMessageView({
                   minWidth: "80px",
                   borderRadius: "8px",
                   overflow: "hidden",
-                  background: "#F9FAFB",
+                  background: "#FFFFFF",
                   border: "1px solid #E5E7EB",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  flexShrink: 0,
                 }}
               >
                 {productImage ? (

@@ -100,7 +100,7 @@ interface DocumentsPayload {
 
 interface CallScheduledPayload {
   type: "call_scheduled" | "scheduled_call_canceled";
-  time: number; // Epoch time in seconds
+  time: number | string; // Epoch time in seconds (number or string)
 }
 
 type MessagePayload =
@@ -284,9 +284,16 @@ export function buildCustomExts(
     case "call_scheduled":
     case "scheduled_call_canceled": {
       const callScheduledPayload = payload as CallScheduledPayload;
+      // Handle both number and string formats for time
+      const timeValue =
+        typeof callScheduledPayload.time === "number"
+          ? callScheduledPayload.time.toString()
+          : typeof callScheduledPayload.time === "string"
+          ? callScheduledPayload.time
+          : "";
       return {
         type: type, // "call_scheduled" or "scheduled_call_canceled"
-        time: callScheduledPayload.time.toString(), // Convert to string for consistency
+        time: timeValue,
       };
     }
 
