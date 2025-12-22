@@ -5,6 +5,7 @@ import {
   MoreVertical,
   BadgeCheck,
 } from "lucide-react";
+import SealCheck from "../assets/SealCheck.svg";
 import { Contact } from "../../common/types/chat";
 import React, { useState, useRef, useEffect } from "react";
 import config from "../../common/config.ts";
@@ -147,11 +148,12 @@ export default function FPChatHeader({
               </h2>
               {/* Seal Check Icon */}
               {selectedContact && (
-                <BadgeCheck
-                  size={18}
+                <img
+                  src={SealCheck}
+                  alt="Seal Check"
                   style={{
-                    color: "#2563eb",
-                    flexShrink: 0,
+                    width: "18px",
+                    height: "18px",
                   }}
                 />
               )}
@@ -204,7 +206,7 @@ export default function FPChatHeader({
             >
               <MoreVertical size={24} />
             </button>
-            {/* Video Call Button
+            Video Call Button
             {onInitiateCall && (
               <div
                 ref={dropdownRef}
@@ -239,9 +241,9 @@ export default function FPChatHeader({
                 >
                   <Video size={24} />
                   <ChevronDown size={16} style={{ marginLeft: "4px" }} />
-                </button> */}
+                </button>
 
-            {/* {showDropdown && (
+                {showDropdown && (
                   <div
                     style={{
                       position: "absolute",
@@ -310,9 +312,9 @@ export default function FPChatHeader({
                       <span>Voice Call</span>
                     </button>
                   </div>
-                )}*/}
-            {/* </div>
-            )} */}
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

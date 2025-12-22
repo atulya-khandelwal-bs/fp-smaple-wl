@@ -62,6 +62,7 @@ const FPVideoCallingInner = ({
   const [uid, setUid] = useState<string | number>(initialUid);
   const [generatingToken, setGeneratingToken] = useState<boolean>(false);
   const [pendingJoin, setPendingJoin] = useState<boolean>(false);
+  const hasAttemptedJoinRef = useRef<boolean>(false);
 
   // Media controls state
   const [micOn, setMic] = useState<boolean>(true);
@@ -719,35 +720,42 @@ const FPVideoCallingInner = ({
     }
   };
 
-  // Auto-join when props are provided
+  // Auto-join when props are provided - only run once to prevent re-joining on re-renders
   useEffect(() => {
+    // Prevent re-running if we've already attempted to join or if conditions aren't met
     if (
-      !isStandalone &&
-      propChannel &&
-      userId &&
-      !calling &&
-      !token &&
-      !pendingJoin &&
-      typeof uid === "number" &&
-      uid > 0
+      hasAttemptedJoinRef.current ||
+      isStandalone ||
+      !propChannel ||
+      !userId ||
+      calling ||
+      token ||
+      pendingJoin ||
+      typeof uid !== "number" ||
+      uid <= 0
     ) {
-      console.log("Auto-joining call with props:", {
-        channel: propChannel,
-        userId: userId,
-        uid: uid,
-      });
-      const autoJoin = async () => {
-        setPendingJoin(true);
-        const generatedToken = await generateToken();
-        if (generatedToken) {
-          setToken(generatedToken);
-        } else {
-          setPendingJoin(false);
-          console.error("Failed to auto-generate token");
-        }
-      };
-      autoJoin();
+      return;
     }
+
+    console.log("Auto-joining call with props:", {
+      channel: propChannel,
+      userId: userId,
+      uid: uid,
+    });
+
+    hasAttemptedJoinRef.current = true;
+    const autoJoin = async () => {
+      setPendingJoin(true);
+      const generatedToken = await generateToken();
+      if (generatedToken) {
+        setToken(generatedToken);
+      } else {
+        setPendingJoin(false);
+        hasAttemptedJoinRef.current = false; // Reset on failure to allow retry
+        console.error("Failed to auto-generate token");
+      }
+    };
+    autoJoin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStandalone, propChannel, userId, uid, calling, token, pendingJoin]);
 

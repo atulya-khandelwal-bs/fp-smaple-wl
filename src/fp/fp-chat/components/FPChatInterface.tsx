@@ -12,6 +12,8 @@ import FPCameraCaptureOverlay from "./FPCameraCaptureOverlay";
 import FPImageViewer from "./FPImageViewer";
 import FPVideoPlayer from "./FPVideoPlayer";
 import FPAudioPlayer from "./FPAudioPlayer";
+import FPScheduleCallModal from "./FPScheduleCallModal";
+import FPScheduledCallBanner from "./FPScheduledCallBanner";
 import {
   formatMessage,
   convertApiMessageToFormat,
@@ -84,6 +86,8 @@ interface FPChatInterfaceProps {
   chatClient: unknown;
   onBackToConversations?: (() => void) | null;
   onInitiateCall?: ((callType: "video" | "audio") => void) | null;
+  onScheduleClick?: (() => void) | null;
+  onSchedule?: ((date: Date, time: string, topic: string) => void) | null;
   onUpdateLastMessageFromHistory?: (peerId: string, message: Message) => void;
   coachInfo?: CoachInfo;
 }
@@ -101,6 +105,8 @@ export default function FPChatInterface({
   chatClient,
   onBackToConversations,
   onInitiateCall,
+  onScheduleClick,
+  onSchedule,
   onUpdateLastMessageFromHistory,
   coachInfo = { coachName: "", profilePhoto: "" },
 }: FPChatInterfaceProps): React.JSX.Element {
@@ -3546,13 +3552,180 @@ export default function FPChatInterface({
     }
   };
 
+  const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
+
+  const handleScheduleClick = (): void => {
+    setShowScheduleModal(true);
+  };
+
+  const handleSchedule = (date: Date, time: string, topics: string[]): void => {
+    if (onSchedule) {
+      onSchedule(date, time, topics.join(", "));
+    }
+    setShowScheduleModal(false);
+  };
+
+  // Find the most recent scheduled call message
+  const getScheduledCall = (): Message | null => {
+    // Filter for scheduled calls (not cancelled) in current conversation
+    const scheduledCalls = currentConversationMessages.filter(
+      (msg) =>
+        msg.messageType === "call_scheduled" &&
+        msg.messageType !== "scheduled_call_canceled"
+    );
+
+    if (scheduledCalls.length === 0) {
+      // Also check if content contains call_scheduled
+      const contentScheduledCalls = currentConversationMessages.filter((msg) => {
+        if (typeof msg.content === "string") {
+          try {
+            const contentObj = JSON.parse(msg.content) as {
+              type?: string;
+              time?: number | string;
+            };
+            return contentObj.type === "call_scheduled";
+          } catch {
+            return false;
+          }
+        }
+        return false;
+      });
+
+      if (contentScheduledCalls.length === 0) return null;
+
+      // Use the most recent from content-based calls
+      const mostRecent = contentScheduledCalls[contentScheduledCalls.length - 1];
+
+      // Try to extract time from content
+      let scheduledTime: number | undefined;
+      if (typeof mostRecent.content === "string") {
+        try {
+          const contentObj = JSON.parse(mostRecent.content) as {
+            type?: string;
+            time?: number | string;
+          };
+          if (contentObj.time !== undefined) {
+            scheduledTime =
+              typeof contentObj.time === "number"
+                ? contentObj.time
+                : typeof contentObj.time === "string"
+                ? parseInt(contentObj.time, 10)
+                : undefined;
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      if (scheduledTime) {
+        const scheduledDate = new Date(scheduledTime * 1000);
+        const now = new Date();
+        // Show if scheduled time is in the future or within the last hour (in case of slight time differences)
+        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+        if (scheduledDate > oneHourAgo) {
+          // Create a proper message object for the banner
+          return {
+            ...mostRecent,
+            messageType: "call_scheduled",
+            system: {
+              kind: "call_scheduled",
+              payload: {
+                time: scheduledTime,
+              },
+            },
+          };
+        }
+      }
+
+      return null;
+    }
+
+    // Get the most recent one (last in array)
+    const mostRecent = scheduledCalls[scheduledCalls.length - 1];
+
+    // Check if the scheduled time is in the future
+    let scheduledTime: number | undefined;
+    if (mostRecent.system?.payload) {
+      const payload = mostRecent.system.payload as {
+        time?: number | string;
+      };
+      if (payload.time !== undefined) {
+        scheduledTime =
+          typeof payload.time === "number"
+            ? payload.time
+            : typeof payload.time === "string"
+            ? parseInt(payload.time, 10)
+            : undefined;
+      }
+    }
+
+    // Also try to extract from content if payload doesn't have it
+    if (!scheduledTime && typeof mostRecent.content === "string") {
+      try {
+        const contentObj = JSON.parse(mostRecent.content) as {
+          type?: string;
+          time?: number | string;
+        };
+        if (contentObj.time !== undefined) {
+          scheduledTime =
+            typeof contentObj.time === "number"
+              ? contentObj.time
+              : typeof contentObj.time === "string"
+              ? parseInt(contentObj.time, 10)
+              : undefined;
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
+    if (scheduledTime) {
+      const scheduledDate = new Date(scheduledTime * 1000);
+      const now = new Date();
+      // Show if scheduled time is in the future or within the last hour (in case of slight time differences)
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      if (scheduledDate > oneHourAgo) {
+        return mostRecent;
+      }
+    }
+
+    return null;
+  };
+
+  const scheduledCall = getScheduledCall();
+
   return (
-    <div className="chat-interface">
+    <div className="chat-interface" style={{ position: "relative" }}>
       <FPChatHeader
         selectedContact={selectedContact}
         onBackToConversations={onBackToConversations}
         onInitiateCall={onInitiateCall}
+        onScheduleClick={handleScheduleClick}
       />
+
+      {/* Scheduled Call Banner */}
+      {scheduledCall && (
+        <FPScheduledCallBanner
+          scheduledCall={scheduledCall}
+          onClick={() => {
+            // Scroll to the scheduled call message
+            if (scheduledCall && chatAreaRef.current) {
+              const messageElement = document.getElementById(
+                `message-${scheduledCall.id}`
+              );
+              if (messageElement) {
+                messageElement.scrollIntoView({ behavior: "smooth", block: "center" });
+              } else {
+                // Fallback: scroll to bottom
+                chatAreaRef.current?.scrollTo({
+                  top: chatAreaRef.current.scrollHeight,
+                  behavior: "smooth",
+                });
+              }
+            }
+          }}
+        />
+      )}
 
       {/* Chat Area */}
       <div className="chat-area" ref={chatAreaRef}>
@@ -3692,6 +3865,16 @@ export default function FPChatInterface({
 
       {/* Audio Player for Voice Recordings */}
       <FPAudioPlayer audioUrl={audioPlayerUrl} onClose={closeAudioPlayer} />
+
+      {/* Schedule Call Modal */}
+      {selectedContact && (
+        <FPScheduleCallModal
+          isOpen={showScheduleModal}
+          onClose={() => setShowScheduleModal(false)}
+          onSchedule={handleSchedule}
+          selectedContact={selectedContact}
+        />
+      )}
 
       {/* Hidden file inputs */}
       <input

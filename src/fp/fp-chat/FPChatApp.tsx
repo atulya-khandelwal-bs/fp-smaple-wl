@@ -10,6 +10,7 @@ import { buildCustomExts } from "./utils/buildCustomExts.ts";
 import { createMessageHandlers } from "./utils/messageHandlers.ts";
 import { Contact, Message, LogEntry } from "../common/types/chat";
 import { CallEndData } from "../common/types/call";
+import type { MessageBody } from "agora-chat";
 // import axios from "axios";
 
 interface FPChatAppProps {
@@ -56,6 +57,11 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
   const isSendingRef = useRef<boolean>(false);
   // 🔹 Track if call end message has been sent to prevent duplicates
   const callEndMessageSentRef = useRef<boolean>(false);
+
+  // 🔹 Track processed message IDs to avoid duplicates in polling
+  const processedMessageIdsRef = useRef<Set<string>>(new Set());
+  // 🔹 Track last poll time to avoid too frequent polling
+  const lastPollTimeRef = useRef<number>(0);
 
   const addLog = (log: string | LogEntry): void =>
     setLogs((prev) => {
@@ -232,13 +238,18 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
   // Detect mobile view
   useEffect(() => {
     const checkMobile = (): void => {
+      // Don't update mobile view state if there's an active call (video or audio)
+      // This prevents re-renders that could affect the call and cause token regeneration
+      if (activeCall) {
+        return;
+      }
       setIsMobileView(window.innerWidth <= 768);
     };
 
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
-  }, []);
+  }, [activeCall]);
 
   // Reset mobile chat view when contact is deselected
   useEffect(() => {
@@ -312,6 +323,120 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     fetchCoaches();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  // Poll for recent messages to catch backend-sent messages that might not trigger handlers
+  useEffect(() => {
+    if (!peerId || !clientRef.current || !isLoggedIn) {
+      return;
+    }
+
+    const POLL_INTERVAL = 3000; // Poll every 3 seconds
+    const MIN_POLL_INTERVAL = 1000; // Minimum 1 second between polls
+
+    const pollForMessages = async (): Promise<void> => {
+      const now = Date.now();
+      // Throttle polling to avoid too frequent requests
+      if (now - lastPollTimeRef.current < MIN_POLL_INTERVAL) {
+        return;
+      }
+      lastPollTimeRef.current = now;
+
+      try {
+        const targetId = peerId.startsWith("user_")
+          ? peerId.replace("user_", "")
+          : peerId;
+
+        const client = clientRef.current as {
+          getHistoryMessages?: (options: {
+            targetId: string;
+            chatType: string;
+            pageSize: number;
+            searchDirection: string;
+          }) => Promise<{
+            messages?: unknown[];
+            cursor?: string;
+          }>;
+        };
+
+        if (!client.getHistoryMessages) {
+          return;
+        }
+
+        // Fetch only the most recent message to check for new ones
+        const result = await client.getHistoryMessages({
+          targetId,
+          chatType: "singleChat",
+          pageSize: 1,
+          searchDirection: "up",
+        });
+
+        const messages = (result?.messages || []) as Array<{
+          id?: string;
+          mid?: string;
+          from?: string;
+          to?: string;
+          time?: number;
+          type?: string;
+          msg?: string;
+          customExts?: unknown;
+          "v2:customExts"?: unknown;
+          body?: unknown;
+          ext?: unknown;
+        }>;
+
+        if (messages.length > 0) {
+          const latestMessage = messages[0];
+          const messageId =
+            latestMessage.id ||
+            latestMessage.mid ||
+            `${latestMessage.from}-${latestMessage.time}`;
+
+          // Check if we've already processed this message
+          if (!processedMessageIdsRef.current.has(messageId)) {
+            processedMessageIdsRef.current.add(messageId);
+
+            // Check if this message is already in logs
+            const messageInLogs = logs.some((log) => {
+              if (typeof log === "string") {
+                return log.includes(messageId);
+              }
+              return log.serverMsgId === messageId;
+            });
+
+            if (!messageInLogs) {
+              // This is a new message that wasn't caught by handlers
+              // Process it through the handlers manually
+              console.log(
+                "🔄 [Polling] Found new message not in logs, processing:",
+                messageId
+              );
+
+              // Trigger the appropriate handler based on message type
+              if (latestMessage.type === "custom" && handlers.onCustomMessage) {
+                handlers.onCustomMessage(latestMessage as MessageBody);
+              } else if (
+                latestMessage.type === "txt" &&
+                handlers.onTextMessage
+              ) {
+                handlers.onTextMessage(latestMessage as MessageBody);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error polling for messages:", error);
+      }
+    };
+
+    // Poll immediately, then set up interval
+    pollForMessages();
+    const intervalId = setInterval(pollForMessages, POLL_INTERVAL);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerId, isLoggedIn, clientRef, logs.length]);
 
   // Register a user with Agora (called when selecting a user)
   const registerUser = async (username: string): Promise<boolean> => {
@@ -537,6 +662,42 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     });
 
     addLog(`Initiating ${callType} call with ${peerId}`);
+  };
+
+  // Handle schedule call
+  const handleScheduleCall = async (
+    date: Date,
+    time: string,
+    topic: string
+  ): Promise<void> => {
+    if (!peerId || !userId) {
+      addLog("Cannot schedule call: Missing user or peer ID");
+      return;
+    }
+
+    // Combine date and time
+    const [timePart, period] = time.split(" ");
+    const [hours, minutes] = timePart.split(":").map(Number);
+    let hour24 = hours;
+    if (period === "pm" && hours !== 12) hour24 += 12;
+    if (period === "am" && hours === 12) hour24 = 0;
+
+    const scheduledDateTime = new Date(date);
+    scheduledDateTime.setHours(hour24, minutes, 0, 0);
+
+    // Convert to epoch seconds
+    const epochSeconds = Math.floor(scheduledDateTime.getTime() / 1000);
+
+    // Create call_scheduled message payload
+    const scheduleMessage = {
+      type: "call_scheduled",
+      time: epochSeconds,
+      topic: topic,
+    };
+
+    // Send the scheduled call message
+    await handleSendMessage(scheduleMessage);
+    addLog(`Call scheduled for ${scheduledDateTime.toLocaleString()}`);
   };
 
   // Handle accept call
@@ -1423,6 +1584,7 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
                   isMobileView ? handleBackToConversations : null
                 }
                 onInitiateCall={handleInitiateCall}
+                onSchedule={handleScheduleCall}
                 onUpdateLastMessageFromHistory={updateLastMessageFromHistory}
                 coachInfo={{ coachName: "", profilePhoto: "" }}
               />

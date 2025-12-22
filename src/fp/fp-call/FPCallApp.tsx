@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, memo } from "react";
 import { FPVideoCalling } from "./components/FPVideoCalling.tsx";
 import "./FPCallApp.css";
 import type { Connection } from "agora-chat";
@@ -201,4 +201,6 @@ function FPCallApp({
   );
 }
 
-export default FPCallApp;
+// Memoize FPCallApp to prevent unnecessary re-renders from parent component
+// This ensures that window resize events in FPChatApp don't cause re-renders
+export default memo(FPCallApp);

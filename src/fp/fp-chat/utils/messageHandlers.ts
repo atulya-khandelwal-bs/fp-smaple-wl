@@ -298,8 +298,11 @@ export function createMessageHandlers({
         addLog(`${msg.from}: ${messageContent}`);
 
         // Update conversation - normalize conversation ID matching
-        if (msg.from) {
-          const fromId = msg.from;
+        // Skip conversation update for self-sent messages (don't create conversation with yourself)
+        // fromId is already defined at the top of onTextMessage function
+        const isSelfSentCustom =
+          fromId === userId || String(fromId) === String(userId);
+        if (msg.from && !isSelfSentCustom) {
           // Normalize: try both with and without user_ prefix
           const normalizedFromId = fromId.startsWith("user_")
             ? fromId
@@ -554,10 +557,26 @@ export function createMessageHandlers({
 
       // Use normalized content if available, otherwise use original message
       const messageToLog = normalizedMessageContent || msg.msg;
-      addLog(`${msg.from}: ${messageToLog}`);
+      // Check if this is a self-sent message (from current user)
+      const fromIdForText = msg.from || "";
+      const isSelfSentText =
+        fromIdForText === userId || String(fromIdForText) === String(userId);
+      const logPrefixText = isSelfSentText
+        ? `You → ${msg.to || "unknown"}`
+        : `${msg.from}`;
+
+      // Always add log with timestamp to ensure it's properly displayed in UI
+      addLog({
+        log: `${logPrefixText}: ${messageToLog}`,
+        timestamp: new Date(),
+        serverMsgId:
+          (msg as { id?: string; mid?: string }).id ||
+          (msg as { id?: string; mid?: string }).mid,
+      });
 
       // Update conversation when receiving a message - normalize conversation ID matching
-      if (msg.from) {
+      // Skip conversation update for self-sent messages (don't create conversation with yourself)
+      if (msg.from && !isSelfSentText) {
         const fromId = msg.from;
         // Normalize: try both with and without user_ prefix
         const normalizedFromId = fromId.startsWith("user_")
@@ -1123,10 +1142,26 @@ export function createMessageHandlers({
       }
 
       console.log("Final messageContent to log (stringified):", messageContent);
-      addLog(`${msg.from}: ${messageContent}`);
+      // Check if this is a self-sent message (from current user)
+      // This handles cases where backend sends messages on behalf of the user
+      const isSelfSent = fromId === userId || String(fromId) === String(userId);
+      const logPrefix = isSelfSent
+        ? `You → ${msg.to || "unknown"}`
+        : `${msg.from}`;
+
+      // Always add log with timestamp to ensure it's properly displayed in UI
+      // Use LogEntry format to match how UI-sent messages are logged
+      addLog({
+        log: `${logPrefix}: ${messageContent}`,
+        timestamp: new Date(),
+        serverMsgId:
+          (msg as { id?: string; mid?: string }).id ||
+          (msg as { id?: string; mid?: string }).mid,
+      });
 
       // Update conversation when receiving a custom message - normalize conversation ID matching
-      if (msg.from) {
+      // Skip conversation update for self-sent messages (don't create conversation with yourself)
+      if (msg.from && !isSelfSent) {
         const fromId = msg.from;
         // Normalize: try both with and without user_ prefix
         const normalizedFromId = fromId.startsWith("user_")
