@@ -817,8 +817,8 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
 
     // Set active call state
     setActiveCall({
-      userId,
       peerId,
+      userId,
       channel,
       isInitiator: true,
       callType: callType,

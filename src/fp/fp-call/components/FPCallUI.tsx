@@ -7,10 +7,7 @@ import {
   Video,
   VideoOff,
   Phone,
-  Palette,
-  Sparkles,
-  X,
-  Droplets,
+  RotateCcw,
   Volume2,
   VolumeX,
   Ellipsis,
@@ -33,15 +30,9 @@ export const FPCallUI = ({
   setCamera,
   speakerOn,
   setSpeakerOn,
-  // Virtual background
-  virtualBackground,
-  selectedBackground,
-  showBackgroundOptions,
-  setShowBackgroundOptions,
-  useAgoraExtension,
-  backgroundOptions,
-  toggleVirtualBackground,
-  handleBackgroundSelect,
+  // Flip camera
+  flipCamera,
+  canFlipCamera,
   // UI state
   showMoreOptions,
   setShowMoreOptions,
@@ -318,31 +309,8 @@ export const FPCallUI = ({
               <>
                 <div className="video-item local main-video">
                   <div
-                    className={`video-container ${
-                      virtualBackground && !useAgoraExtension
-                        ? "virtual-bg"
-                        : ""
-                    }`}
+                    className="video-container"
                   >
-                    {virtualBackground &&
-                      !useAgoraExtension &&
-                      selectedBackground && (
-                        <div className="virtual-background">
-                          {selectedBackground === "blur" ? (
-                            <div className="blur-background"></div>
-                          ) : (
-                            <img
-                              src={
-                                backgroundOptions.find(
-                                  (bg) => bg.id === selectedBackground
-                                )?.url
-                              }
-                              alt="Virtual background"
-                              className="background-image"
-                            />
-                          )}
-                        </div>
-                      )}
                     {localCameraTrack && cameraOn && !isAudioCall ? (
                       <LocalUser
                         audioTrack={localMicrophoneTrack}
@@ -355,12 +323,6 @@ export const FPCallUI = ({
                           height: "100%",
                           objectFit: "cover",
                           borderRadius: "8px",
-                          position:
-                            virtualBackground && !useAgoraExtension
-                              ? "relative"
-                              : "static",
-                          zIndex:
-                            virtualBackground && !useAgoraExtension ? 2 : 1,
                         }}
                       />
                     ) : (
@@ -488,31 +450,8 @@ export const FPCallUI = ({
                   style={{ cursor: "pointer" }}
                 >
                   <div
-                    className={`video-container ${
-                      virtualBackground && !useAgoraExtension
-                        ? "virtual-bg"
-                        : ""
-                    }`}
+                    className="video-container"
                   >
-                    {virtualBackground &&
-                      !useAgoraExtension &&
-                      selectedBackground && (
-                        <div className="virtual-background">
-                          {selectedBackground === "blur" ? (
-                            <div className="blur-background"></div>
-                          ) : (
-                            <img
-                              src={
-                                backgroundOptions.find(
-                                  (bg) => bg.id === selectedBackground
-                                )?.url
-                              }
-                              alt="Virtual background"
-                              className="background-image"
-                            />
-                          )}
-                        </div>
-                      )}
                     {localCameraTrack && cameraOn && !isAudioCall ? (
                       <LocalUser
                         audioTrack={localMicrophoneTrack}
@@ -525,12 +464,6 @@ export const FPCallUI = ({
                           height: "100%",
                           objectFit: "cover",
                           borderRadius: "8px",
-                          position:
-                            virtualBackground && !useAgoraExtension
-                              ? "relative"
-                              : "static",
-                          zIndex:
-                            virtualBackground && !useAgoraExtension ? 2 : 1,
                         }}
                       />
                     ) : (
@@ -585,31 +518,8 @@ export const FPCallUI = ({
               <>
                 <div className="video-item local main-video">
                   <div
-                    className={`video-container ${
-                      virtualBackground && !useAgoraExtension
-                        ? "virtual-bg"
-                        : ""
-                    }`}
+                    className="video-container"
                   >
-                    {virtualBackground &&
-                      !useAgoraExtension &&
-                      selectedBackground && (
-                        <div className="virtual-background">
-                          {selectedBackground === "blur" ? (
-                            <div className="blur-background"></div>
-                          ) : (
-                            <img
-                              src={
-                                backgroundOptions.find(
-                                  (bg) => bg.id === selectedBackground
-                                )?.url
-                              }
-                              alt="Virtual background"
-                              className="background-image"
-                            />
-                          )}
-                        </div>
-                      )}
                     {localCameraTrack && cameraOn && !isAudioCall ? (
                       <LocalUser
                         audioTrack={localMicrophoneTrack}
@@ -622,12 +532,6 @@ export const FPCallUI = ({
                           height: "100%",
                           objectFit: "cover",
                           borderRadius: "8px",
-                          position:
-                            virtualBackground && !useAgoraExtension
-                              ? "relative"
-                              : "static",
-                          zIndex:
-                            virtualBackground && !useAgoraExtension ? 2 : 1,
                         }}
                       />
                     ) : (
@@ -820,93 +724,33 @@ export const FPCallUI = ({
                   >
                     <button
                       className="control-button"
-                      onClick={(): void => {
-                        toggleVirtualBackground();
+                      onClick={async (): Promise<void> => {
+                        if (flipCamera) {
+                          await flipCamera();
+                        }
                         setShowMoreOptions(false);
                       }}
+                      disabled={!canFlipCamera}
                       style={{
                         width: "64px",
                         height: "64px",
                         borderRadius: "50%",
                         justifyContent: "center",
+                        opacity: canFlipCamera ? 1 : 0.5,
+                        cursor: canFlipCamera ? "pointer" : "not-allowed",
                       }}
-                      title="Virtual Background"
+                      title={canFlipCamera ? "Flip Camera" : "Only one camera available"}
                     >
                       <div className="control-icon">
-                        <Sparkles size={18} />
+                        <RotateCcw size={18} />
                       </div>
                     </button>
-                    {virtualBackground && (
-                      <button
-                        className="control-button"
-                        onClick={(): void => {
-                          setShowBackgroundOptions(!showBackgroundOptions);
-                          setShowMoreOptions(false);
-                        }}
-                        style={{
-                          width: "64px",
-                          height: "64px",
-                          borderRadius: "50%",
-                          justifyContent: "center",
-                        }}
-                        title="Background Options"
-                      >
-                        <div className="control-icon">
-                          <Palette size={18} />
-                        </div>
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* Background Options Panel */}
-          {showBackgroundOptions && (
-            <div className="background-options-panel">
-              <div className="background-options-header">
-                <h3>Choose Background</h3>
-                <button
-                  className="close-button"
-                  onClick={(): void => setShowBackgroundOptions(false)}
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="background-options-grid">
-                {backgroundOptions.map((background) => (
-                  <button
-                    key={background.id}
-                    className={`background-option ${
-                      selectedBackground === background.id ? "selected" : ""
-                    }`}
-                    onClick={(): void => handleBackgroundSelect(background)}
-                  >
-                    {background.type === "blur" ? (
-                      <div className="background-preview blur-preview">
-                        <div className="blur-icon">
-                          <Droplets size={24} />
-                        </div>
-                        <span>{background.name}</span>
-                      </div>
-                    ) : (
-                      <div className="background-preview">
-                        <img
-                          src={background.url}
-                          alt={background.name}
-                          className="background-thumbnail"
-                        />
-                        <span className="background-name">
-                          {background.name}
-                        </span>
-                      </div>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       ) : isStandalone ? (
         <div className="join-screen">

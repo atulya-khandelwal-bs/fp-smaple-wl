@@ -1,7 +1,6 @@
 import React from "react";
 import AgoraRTC, { AgoraRTCProvider, IAgoraRTCClient } from "agora-rtc-react";
 import FPCallUI from "./FPCallUI.tsx";
-import VirtualBackgroundExtension from "agora-extension-virtual-background";
 import {
   useIsConnected,
   useJoin,
@@ -12,7 +11,7 @@ import {
 } from "agora-rtc-react";
 import { useEffect, useRef, useState } from "react";
 import config from "../../common/config.ts";
-import { FPVideoCallingProps, BackgroundOption } from "../../common/types/call";
+import { FPVideoCallingProps } from "../../common/types/call";
 
 interface FPVideoCallingInnerProps extends FPVideoCallingProps {
   client: IAgoraRTCClient;
@@ -67,34 +66,20 @@ const FPVideoCallingInner = ({
   // Media controls state
   const [micOn, setMic] = useState<boolean>(true);
   const [cameraOn, setCamera] = useState<boolean>(!isAudioCall);
-  const [virtualBackground, setVirtualBackground] = useState<boolean>(false);
-  const [selectedBackground, setSelectedBackground] = useState<string | null>(
-    null
-  );
-  const [showBackgroundOptions, setShowBackgroundOptions] =
-    useState<boolean>(false);
   const [speakerOn, setSpeakerOn] = useState<boolean>(true);
   const [showMoreOptions, setShowMoreOptions] = useState<boolean>(false);
-  const [useAgoraExtension, setUseAgoraExtension] = useState<boolean>(true);
   const [controlsVisible, setControlsVisible] = useState<boolean>(true);
   const [mainUserId, setMainUserId] = useState<number | null>(null);
+
+  // Flip camera state
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [currentCameraIndex, setCurrentCameraIndex] = useState<number>(0);
 
   // Refs
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const callStartTimeRef = useRef<number | null>(null);
   const remoteUserEverJoinedRef = useRef<boolean>(false);
-  const processorRef = useRef<{
-    setOptions?: (options: unknown) => Promise<void> | void;
-    enable?: () => Promise<void> | void;
-    disable?: () => Promise<void> | void;
-    init?: () => Promise<void>;
-    pipe?: (processor: unknown) => unknown;
-  } | null>(null);
-  const extensionRef = useRef<VirtualBackgroundExtension | null>(null);
-  const loadedImagesRef = useRef<Map<string, HTMLImageElement>>(
-    new Map()
-  ); /*  */
 
   // Recorder UID constant - ignore all events for this user
   const RECORDER_UID = 999999999;
@@ -193,52 +178,63 @@ const FPVideoCallingInner = ({
     channel,
   ]);
 
-  // Background options
-  const backgroundOptions: BackgroundOption[] = [
-    { id: "blur", name: "Blur", type: "blur" },
-    {
-      id: "office",
-      name: "Office",
-      type: "image",
-      url: "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&h=600&fit=crop",
-    },
-    {
-      id: "nature",
-      name: "Nature",
-      type: "image",
-      url: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&h=600&fit=crop",
-    },
-    {
-      id: "space",
-      name: "Space",
-      type: "image",
-      url: "https://images.unsplash.com/photo-1446776877081-d282a0f896e2?w=800&h=600&fit=crop",
-    },
-    {
-      id: "beach",
-      name: "Beach",
-      type: "image",
-      url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop",
-    },
-    {
-      id: "city",
-      name: "City",
-      type: "image",
-      url: "https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=800&h=600&fit=crop",
-    },
-  ];
-
-  // Register virtual background extension for video calls
-  useEffect(() => {
-    if (!isAudioCall) {
-      const extension = new VirtualBackgroundExtension();
-      if (!extension.checkCompatibility()) {
-        console.error("Does not support Virtual Background!");
-      }
-      AgoraRTC.registerExtensions([extension]);
-      extensionRef.current = extension;
+  // Get available cameras
+  const getCameras = async (): Promise<MediaDeviceInfo[]> => {
+    try {
+      const devices = await AgoraRTC.getDevices();
+      return devices.filter((d) => d.kind === "videoinput");
+    } catch (error) {
+      console.error("Error getting cameras:", error);
+      return [];
     }
-  }, [isAudioCall]);
+  };
+
+  // Load cameras on mount (only for video calls)
+  useEffect(() => {
+    if (isAudioCall || !calling) return;
+
+    const loadCameras = async () => {
+      const cams = await getCameras();
+      setCameras(cams);
+      console.log("Available cameras:", cams.length);
+    };
+
+    loadCameras();
+  }, [isAudioCall, calling]);
+
+  // Flip camera function
+  const flipCamera = async (): Promise<void> => {
+    if (!localCameraTrack || cameras.length < 2) {
+      console.warn("Cannot flip camera: insufficient cameras available");
+      return;
+    }
+
+    try {
+      // Lazy init for iOS PWA - load cameras if not already loaded
+      if (cameras.length === 0) {
+        const cams = await getCameras();
+        setCameras(cams);
+        if (cams.length < 2) {
+          console.warn("Only one camera available, cannot flip");
+          return;
+        }
+      }
+
+      // Switch to next camera
+      const nextIndex = (currentCameraIndex + 1) % cameras.length;
+      const nextCamera = cameras[nextIndex];
+
+      console.log("Flipping camera:", {
+        from: cameras[currentCameraIndex]?.label || `Camera ${currentCameraIndex}`,
+        to: nextCamera.label || `Camera ${nextIndex}`,
+      });
+
+      await localCameraTrack.setDevice(nextCamera.deviceId);
+      setCurrentCameraIndex(nextIndex);
+    } catch (error) {
+      console.error("Error flipping camera:", error);
+    }
+  };
 
   // Suppress Agora analytics errors
   useEffect(() => {
@@ -446,148 +442,6 @@ const FPVideoCallingInner = ({
     }
   }, [remoteUsers.length, mainUserId, remoteUsers]);
 
-  // Preload background images
-  useEffect(() => {
-    const preloadImages = async () => {
-      for (const bg of backgroundOptions) {
-        if (bg.type === "image" && bg.url) {
-          try {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            await new Promise<HTMLImageElement>((resolve, reject) => {
-              img.onload = () => {
-                loadedImagesRef.current.set(bg.id, img);
-                console.log(`Preloaded image for ${bg.name}`);
-                resolve(img);
-              };
-              img.onerror = reject;
-              if (bg.url) {
-                img.src = bg.url;
-              } else {
-                reject(new Error("No URL provided"));
-              }
-            });
-          } catch (error) {
-            console.error(`Failed to preload image for ${bg.name}:`, error);
-          }
-        }
-      }
-    };
-    preloadImages();
-  }, []);
-
-  // Setup virtual background processor
-  useEffect(() => {
-    if (!localCameraTrack || isAudioCall) return;
-
-    const setupVirtualBackground = async () => {
-      try {
-        if (!extensionRef.current) {
-          const ext = new VirtualBackgroundExtension();
-          AgoraRTC.registerExtensions([ext]);
-          extensionRef.current = ext;
-        }
-
-        if (!processorRef.current && extensionRef.current) {
-          const processor = extensionRef.current.createProcessor();
-          processorRef.current = processor as unknown as {
-            setOptions?: (options: unknown) => Promise<void> | void;
-            enable?: () => Promise<void> | void;
-            disable?: () => Promise<void> | void;
-            init?: () => Promise<void>;
-            pipe?: (processor: unknown) => unknown;
-          } | null;
-          if (processorRef.current?.init) {
-            await processorRef.current.init();
-          }
-        }
-
-        if (processorRef.current && localCameraTrack.pipe) {
-          // Type assertion needed for Agora SDK processor
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          localCameraTrack
-            .pipe(processorRef.current as any)
-            .pipe(localCameraTrack.processorDestination);
-        }
-      } catch (err) {
-        console.error("Error setting up virtual background:", err);
-      }
-    };
-
-    setupVirtualBackground();
-  }, [localCameraTrack, isAudioCall]);
-
-  // Enable/disable background effect dynamically
-  useEffect(() => {
-    const updateBackground = async () => {
-      if (!processorRef.current && useAgoraExtension) return;
-
-      try {
-        if (virtualBackground && selectedBackground) {
-          if (useAgoraExtension && processorRef.current) {
-            let options: {
-              type: string;
-              blurDegree?: number;
-              source?: HTMLImageElement | string;
-            } = { type: "blur" };
-
-            if (selectedBackground === "blur") {
-              options = {
-                type: "blur",
-                blurDegree: 2,
-              };
-            } else if (selectedBackground) {
-              const bg = backgroundOptions.find(
-                (bg) => bg.id === selectedBackground
-              );
-              if (bg?.type === "image") {
-                const preloadedImg =
-                  loadedImagesRef.current.get(selectedBackground);
-                if (preloadedImg) {
-                  options = {
-                    type: "img",
-                    source: preloadedImg,
-                  };
-                  console.log("Using preloaded image for background");
-                } else {
-                  console.warn(
-                    "Preloaded image not found, falling back to URL"
-                  );
-                  if (bg.url) {
-                    options = {
-                      type: "img",
-                      source: bg.url,
-                    };
-                  }
-                }
-              }
-            }
-
-            console.log("Setting background options:", options);
-            if (processorRef.current?.setOptions) {
-              await processorRef.current.setOptions(options as unknown);
-              if (processorRef.current.enable) {
-                await processorRef.current.enable();
-              }
-            }
-          }
-        } else {
-          console.log("Disabling virtual background");
-          if (useAgoraExtension && processorRef.current?.disable) {
-            await processorRef.current.disable();
-          }
-        }
-      } catch (error) {
-        console.error("Error updating background:", error);
-        if (useAgoraExtension) {
-          console.log("Agora extension failed, falling back to CSS approach");
-          setUseAgoraExtension(false);
-        }
-      }
-    };
-
-    updateBackground();
-  }, [virtualBackground, selectedBackground, useAgoraExtension]);
 
   // Auto-hide controls on mobile
   useEffect(() => {
@@ -833,22 +687,6 @@ const FPVideoCallingInner = ({
   }, [showMoreOptions]);
 
   // Handlers
-  const handleBackgroundSelect = (background: BackgroundOption): void => {
-    console.log("Background selected:", background);
-    setSelectedBackground(background.id);
-    setVirtualBackground(true);
-    setShowBackgroundOptions(false);
-  };
-
-  const toggleVirtualBackground = (): void => {
-    if (!virtualBackground) {
-      setVirtualBackground(true);
-      setSelectedBackground("blur");
-    } else {
-      setVirtualBackground(false);
-      setSelectedBackground(null);
-    }
-  };
 
   const handleEndCall = (): void => {
     // Stop system camera and mic when call ends
@@ -920,15 +758,9 @@ const FPVideoCallingInner = ({
         setCamera={setCamera}
         speakerOn={speakerOn}
         setSpeakerOn={setSpeakerOn}
-        // Virtual background
-        virtualBackground={virtualBackground}
-        selectedBackground={selectedBackground}
-        showBackgroundOptions={showBackgroundOptions}
-        setShowBackgroundOptions={setShowBackgroundOptions}
-        useAgoraExtension={useAgoraExtension}
-        backgroundOptions={backgroundOptions}
-        toggleVirtualBackground={toggleVirtualBackground}
-        handleBackgroundSelect={handleBackgroundSelect}
+        // Flip camera
+        flipCamera={flipCamera}
+        canFlipCamera={cameras.length >= 2}
         // UI state
         showMoreOptions={showMoreOptions}
         setShowMoreOptions={setShowMoreOptions}

@@ -36,15 +36,9 @@ export interface FPCallUIProps {
   setCamera: (value: boolean | ((prev: boolean) => boolean)) => void;
   speakerOn: boolean;
   setSpeakerOn: (value: boolean | ((prev: boolean) => boolean)) => void;
-  // Virtual background
-  virtualBackground: boolean;
-  selectedBackground: string | null;
-  showBackgroundOptions: boolean;
-  setShowBackgroundOptions: (value: boolean) => void;
-  useAgoraExtension: boolean;
-  backgroundOptions: BackgroundOption[];
-  toggleVirtualBackground: () => void;
-  handleBackgroundSelect: (background: BackgroundOption) => void;
+  // Flip camera
+  flipCamera?: () => Promise<void>;
+  canFlipCamera: boolean;
   // UI state
   showMoreOptions: boolean;
   setShowMoreOptions: (value: boolean | ((prev: boolean) => boolean)) => void;
