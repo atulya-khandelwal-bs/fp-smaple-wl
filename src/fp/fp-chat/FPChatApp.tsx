@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import "./FPChatApp.css";
 import FPConversationList from "./components/FPConversationList.tsx";
 import FPChatInterface from "./components/FPChatInterface.tsx";
@@ -11,6 +11,10 @@ import { createMessageHandlers } from "./utils/messageHandlers.ts";
 import { Contact, Message, LogEntry } from "../common/types/chat";
 import { CallEndData } from "../common/types/call";
 import type { MessageBody } from "agora-chat";
+import {
+  fetchDietitianDetails,
+  type DietitianApiResponse,
+} from "./services/dietitianApi";
 // import axios from "axios";
 
 interface FPChatAppProps {
@@ -52,6 +56,15 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
   // Call state management
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+
+  // Scheduled call from API
+  const [scheduledCallFromApi, setScheduledCallFromApi] = useState<{
+    date: string;
+    start_time: string;
+    call_date_time: number; // epoch timestamp
+    schedule_call_id: number;
+    call_type?: "video" | "audio"; // Type of call scheduled
+  } | null>(null);
 
   // 🔹 Global message ID tracker to prevent duplicates
   const isSendingRef = useRef<boolean>(false);
@@ -110,6 +123,96 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       return null;
     }
   };
+
+  // Function to fetch scheduled call from API (reusable)
+  // Memoized with useCallback to prevent unnecessary re-renders
+  const fetchScheduledCall = useCallback(async (): Promise<void> => {
+    if (!isLoggedIn || !selectedContact) {
+      setScheduledCallFromApi(null);
+      return;
+    }
+
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const callDate = Math.floor(today.getTime() / 1000);
+
+      const data = await fetchDietitianDetails(callDate);
+
+      // Find first slot with schedule_call_id != null
+      let foundScheduledSlot: {
+        date: string;
+        start_time: string;
+        call_date_time: number;
+        schedule_call_id: number;
+        call_type?: "video" | "audio";
+      } | null = null;
+
+      if (data?.result?.health_coach_schedules) {
+        for (const schedule of data.result.health_coach_schedules) {
+          if (schedule.slots) {
+            const scheduledSlot = schedule.slots.find(
+              (slot) => slot.schedule_call_id != null
+            );
+            if (scheduledSlot && scheduledSlot.schedule_call_id) {
+              // Calculate call_date_time from date and start_time
+              const [year, month, day] = schedule.date.split("-").map(Number);
+              const date = new Date(year, month - 1, day);
+
+              // Parse time
+              const [time, period] = scheduledSlot.start_time.split(" ");
+              const [hours, minutes] = time.split(":").map(Number);
+              let hour24 = hours;
+              if (period === "pm" && hours !== 12) hour24 += 12;
+              if (period === "am" && hours === 12) hour24 = 0;
+
+              date.setHours(hour24, minutes, 0, 0);
+              const call_date_time = Math.floor(date.getTime() / 1000);
+
+              foundScheduledSlot = {
+                date: schedule.date,
+                start_time: scheduledSlot.start_time,
+                call_date_time: call_date_time,
+                schedule_call_id: scheduledSlot.schedule_call_id,
+                call_type: "video", // Default to video, will be updated when scheduling
+              };
+              console.log("Scheduled call found:", foundScheduledSlot);
+              break; // Found first scheduled slot, exit
+            }
+          }
+        }
+      }
+
+      setScheduledCallFromApi(foundScheduledSlot);
+    } catch (error) {
+      console.error("Error fetching scheduled call:", error);
+      setScheduledCallFromApi(null);
+    }
+  }, [isLoggedIn, selectedContact]);
+
+  // Fetch scheduled call from API on mount
+  // Fetch scheduled call from API when logged in and contact is selected
+  useEffect(() => {
+    fetchScheduledCall();
+  }, [fetchScheduledCall]);
+
+  // Poll for scheduled call updates every 10 seconds to detect backend cancellations
+  useEffect(() => {
+    if (!isLoggedIn || !selectedContact) {
+      return;
+    }
+
+    // Poll every 10 seconds to check for scheduled call updates
+    const pollInterval = setInterval(() => {
+      console.log("🔄 Polling for scheduled call updates...");
+      fetchScheduledCall();
+    }, 10000); // Poll every 10 seconds
+
+    // Cleanup interval on unmount or when dependencies change
+    return () => {
+      clearInterval(pollInterval);
+    };
+  }, [isLoggedIn, selectedContact, fetchScheduledCall]);
 
   // Create a ref to store clientRef for handlers
   const clientRefForHandlers = useRef<unknown>(null);
@@ -330,8 +433,16 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       return;
     }
 
+    // Clear processed message IDs when peerId changes to start fresh
+    processedMessageIdsRef.current.clear();
+    console.log(
+      "🔄 [Polling] Cleared processed message IDs for new peer:",
+      peerId
+    );
+
     const POLL_INTERVAL = 3000; // Poll every 3 seconds
     const MIN_POLL_INTERVAL = 1000; // Minimum 1 second between polls
+    const INITIAL_POLL_DELAY = 3000; // Delay before first poll to allow fetchInitialMessages to complete
 
     const pollForMessages = async (): Promise<void> => {
       const now = Date.now();
@@ -386,40 +497,88 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
 
         if (messages.length > 0) {
           const latestMessage = messages[0];
+          // Generate all possible message ID formats to check against processed set
           const messageId =
             latestMessage.id ||
             latestMessage.mid ||
             `${latestMessage.from}-${latestMessage.time}`;
+          const messageIdAlt1 = latestMessage.id || null;
+          const messageIdAlt2 = latestMessage.mid || null;
+          const messageIdAlt3 =
+            latestMessage.from && latestMessage.time
+              ? `${latestMessage.from}-${latestMessage.time}`
+              : null;
 
-          // Check if we've already processed this message
-          if (!processedMessageIdsRef.current.has(messageId)) {
+          // Check if we've already processed this message (in any ID format)
+          const isAlreadyProcessed =
+            processedMessageIdsRef.current.has(messageId) ||
+            (messageIdAlt1 &&
+              processedMessageIdsRef.current.has(messageIdAlt1)) ||
+            (messageIdAlt2 &&
+              processedMessageIdsRef.current.has(messageIdAlt2)) ||
+            (messageIdAlt3 &&
+              processedMessageIdsRef.current.has(messageIdAlt3));
+
+          if (isAlreadyProcessed) {
+            // Message is already processed (likely from fetchInitialMessages)
+            // Skip it to prevent duplicates
+            console.log(
+              "⏭️ [Polling] Message already processed, skipping:",
+              messageId
+            );
+            return;
+          }
+
+          // Check if this message is already in logs
+          const messageInLogs = logs.some((log) => {
+            if (typeof log === "string") {
+              return log.includes(messageId);
+            }
+            return (
+              log.serverMsgId === messageId ||
+              log.serverMsgId === messageIdAlt1 ||
+              log.serverMsgId === messageIdAlt2 ||
+              log.serverMsgId === messageIdAlt3
+            );
+          });
+
+          if (!messageInLogs) {
+            // Mark all ID formats as processed BEFORE processing
             processedMessageIdsRef.current.add(messageId);
+            if (messageIdAlt1) {
+              processedMessageIdsRef.current.add(messageIdAlt1);
+            }
+            if (messageIdAlt2) {
+              processedMessageIdsRef.current.add(messageIdAlt2);
+            }
+            if (messageIdAlt3) {
+              processedMessageIdsRef.current.add(messageIdAlt3);
+            }
 
-            // Check if this message is already in logs
-            const messageInLogs = logs.some((log) => {
-              if (typeof log === "string") {
-                return log.includes(messageId);
-              }
-              return log.serverMsgId === messageId;
-            });
+            // This is a new message that wasn't caught by handlers
+            // Process it through the handlers manually
+            console.log(
+              "🔄 [Polling] Found new message not in logs, processing:",
+              messageId
+            );
 
-            if (!messageInLogs) {
-              // This is a new message that wasn't caught by handlers
-              // Process it through the handlers manually
-              console.log(
-                "🔄 [Polling] Found new message not in logs, processing:",
-                messageId
-              );
-
-              // Trigger the appropriate handler based on message type
-              if (latestMessage.type === "custom" && handlers.onCustomMessage) {
-                handlers.onCustomMessage(latestMessage as MessageBody);
-              } else if (
-                latestMessage.type === "txt" &&
-                handlers.onTextMessage
-              ) {
-                handlers.onTextMessage(latestMessage as MessageBody);
-              }
+            // Trigger the appropriate handler based on message type
+            if (latestMessage.type === "custom" && handlers.onCustomMessage) {
+              handlers.onCustomMessage(latestMessage as MessageBody);
+            } else if (latestMessage.type === "txt" && handlers.onTextMessage) {
+              handlers.onTextMessage(latestMessage as MessageBody);
+            }
+          } else {
+            // Message is in logs, mark as processed but don't process again
+            processedMessageIdsRef.current.add(messageId);
+            if (messageIdAlt1) {
+              processedMessageIdsRef.current.add(messageIdAlt1);
+            }
+            if (messageIdAlt2) {
+              processedMessageIdsRef.current.add(messageIdAlt2);
+            }
+            if (messageIdAlt3) {
+              processedMessageIdsRef.current.add(messageIdAlt3);
             }
           }
         }
@@ -428,12 +587,19 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       }
     };
 
-    // Poll immediately, then set up interval
-    pollForMessages();
-    const intervalId = setInterval(pollForMessages, POLL_INTERVAL);
+    // Delay the first poll to allow fetchInitialMessages to complete
+    // This prevents duplicate messages from appearing on page load/refresh
+    let intervalId: NodeJS.Timeout | null = null;
+    const initialTimeoutId = setTimeout(() => {
+      pollForMessages();
+      intervalId = setInterval(pollForMessages, POLL_INTERVAL);
+    }, INITIAL_POLL_DELAY);
 
     return () => {
-      clearInterval(intervalId);
+      clearTimeout(initialTimeoutId);
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peerId, isLoggedIn, clientRef, logs.length]);
@@ -638,7 +804,7 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     // USERID => userId (the user's ID)
     // DIETITIANID => peerId (the dietitian/coach ID)
     const callTypeStr = callType === "video" ? "video" : "voice";
-    const channel = `fp_rtc_call_${callTypeStr}_${peerId}_${userId}`;
+    const channel = `fp_rtc_call_${callTypeStr}_${userId}_${peerId}`;
 
     // Reset call end message sent flag for new call
     callEndMessageSentRef.current = false;
@@ -661,43 +827,82 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       peerAvatar: selectedContact?.avatar,
     });
 
-    addLog(`Initiating ${callType} call with ${peerId}`);
+    addLog(`Initiating ${callType} call with ${userId}`);
   };
 
-  // Handle schedule call
+  // Handle schedule call - refetch dietitian details after scheduling
   const handleScheduleCall = async (
     date: Date,
     time: string,
-    topic: string
+    topic: string,
+    callType: "video" | "audio" = "video"
   ): Promise<void> => {
-    if (!peerId || !userId) {
-      addLog("Cannot schedule call: Missing user or peer ID");
+    if (!selectedContact) {
+      addLog("Cannot schedule call: No contact selected");
       return;
     }
 
-    // Combine date and time
-    const [timePart, period] = time.split(" ");
-    const [hours, minutes] = timePart.split(":").map(Number);
-    let hour24 = hours;
-    if (period === "pm" && hours !== 12) hour24 += 12;
-    if (period === "am" && hours === 12) hour24 = 0;
+    addLog(`Call scheduled for ${date.toLocaleDateString()} at ${time}`);
 
-    const scheduledDateTime = new Date(date);
-    scheduledDateTime.setHours(hour24, minutes, 0, 0);
+    // Refetch dietitian details to get the updated scheduled call info
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const callDate = Math.floor(today.getTime() / 1000);
 
-    // Convert to epoch seconds
-    const epochSeconds = Math.floor(scheduledDateTime.getTime() / 1000);
+      const data = await fetchDietitianDetails(callDate);
 
-    // Create call_scheduled message payload
-    const scheduleMessage = {
-      type: "call_scheduled",
-      time: epochSeconds,
-      topic: topic,
-    };
+      // Find first slot with schedule_call_id != null
+      let foundScheduledSlot: {
+        date: string;
+        start_time: string;
+        call_date_time: number;
+        schedule_call_id: number;
+        call_type?: "video" | "audio";
+      } | null = null;
 
-    // Send the scheduled call message
-    await handleSendMessage(scheduleMessage);
-    addLog(`Call scheduled for ${scheduledDateTime.toLocaleString()}`);
+      if (data?.result?.health_coach_schedules) {
+        for (const schedule of data.result.health_coach_schedules) {
+          if (schedule.slots) {
+            const scheduledSlot = schedule.slots.find(
+              (slot) => slot.schedule_call_id != null
+            );
+            if (scheduledSlot && scheduledSlot.schedule_call_id) {
+              // Calculate call_date_time from date and start_time
+              const [year, month, day] = schedule.date.split("-").map(Number);
+              const dateObj = new Date(year, month - 1, day);
+
+              // Parse time
+              const [timePart, period] = scheduledSlot.start_time.split(" ");
+              const [hours, minutes] = timePart.split(":").map(Number);
+              let hour24 = hours;
+              if (period === "pm" && hours !== 12) hour24 += 12;
+              if (period === "am" && hours === 12) hour24 = 0;
+
+              dateObj.setHours(hour24, minutes, 0, 0);
+              const call_date_time = Math.floor(dateObj.getTime() / 1000);
+
+              foundScheduledSlot = {
+                date: schedule.date,
+                start_time: scheduledSlot.start_time,
+                call_date_time: call_date_time,
+                schedule_call_id: scheduledSlot.schedule_call_id,
+                call_type: callType, // Store the call type from scheduling
+              };
+              console.log(
+                "Scheduled call updated after scheduling:",
+                foundScheduledSlot
+              );
+              break; // Found first scheduled slot, exit
+            }
+          }
+        }
+      }
+
+      setScheduledCallFromApi(foundScheduledSlot);
+    } catch (error) {
+      console.error("Error refetching scheduled call after scheduling:", error);
+    }
   };
 
   // Handle accept call
@@ -1586,7 +1791,25 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
                 onInitiateCall={handleInitiateCall}
                 onSchedule={handleScheduleCall}
                 onUpdateLastMessageFromHistory={updateLastMessageFromHistory}
+                onMessagesLoadedFromHistory={(messageIds) => {
+                  // Mark all message IDs from history as processed to prevent polling from processing them again
+                  messageIds.forEach((id) => {
+                    processedMessageIdsRef.current.add(id);
+                  });
+                  console.log(
+                    "✅ [FPChatApp] Marked messages from history as processed:",
+                    messageIds.length,
+                    "IDs:",
+                    messageIds.slice(0, 5) // Log first 5 IDs for debugging
+                  );
+                  console.log(
+                    "📊 [FPChatApp] Total processed message IDs:",
+                    processedMessageIdsRef.current.size
+                  );
+                }}
                 coachInfo={{ coachName: "", profilePhoto: "" }}
+                scheduledCallFromApi={scheduledCallFromApi}
+                onRefreshScheduledCall={fetchScheduledCall}
               />
             )
           ) : (

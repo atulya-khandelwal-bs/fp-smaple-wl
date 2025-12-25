@@ -230,9 +230,12 @@ export const FPCallUI = ({
     }
   };
 
+  // Show call UI if connected OR if calling is true (to handle race conditions)
+  const shouldShowCallUI = isConnected || calling;
+  
   return (
     <>
-      {isConnected ? (
+      {shouldShowCallUI ? (
         <div className="video-call-container" ref={videoContainerRef}>
           {/* Header */}
           <div

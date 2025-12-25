@@ -513,6 +513,8 @@ export const formatMessage = (
     isIncoming: agoraMsg.from !== userId,
     peerId,
     avatar: messageAvatar,
+    mid: agoraMsg.mid, // Preserve mid for message editing
+    serverMsgId: agoraMsg.id, // Preserve server message ID for matching edited messages
   };
 
   // Handle custom messages

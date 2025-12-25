@@ -7,6 +7,7 @@ interface MessageHandlers {
   onDisconnected?: () => void;
   onTextMessage?: (msg: MessageBody) => void;
   onCustomMessage?: (msg: MessageBody) => void;
+  onModifiedMessage?: (msg: MessageBody) => void; // Agora SDK uses onModifiedMessage, not onMessageChanged
   onTokenWillExpire?: () => Promise<void>;
   onTokenExpired?: () => Promise<void>;
   onError?: (error: { message: string }) => void;

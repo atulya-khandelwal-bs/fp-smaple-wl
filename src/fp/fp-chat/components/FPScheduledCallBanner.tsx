@@ -10,10 +10,13 @@ interface FPScheduledCallBannerProps {
 export default function FPScheduledCallBanner({
   scheduledCall,
   onClick,
-}: FPScheduledCallBannerProps): React.JSX.Element {
+}: FPScheduledCallBannerProps): React.JSX.Element | null {
   // Extract scheduled time
   let scheduledTime: number | undefined;
   let scheduledDate: Date | null = null;
+
+  // Debug logging
+  console.log("FPScheduledCallBanner - scheduledCall:", scheduledCall);
 
   if (scheduledCall.system?.payload) {
     const payload = scheduledCall.system.payload as {
@@ -28,14 +31,27 @@ export default function FPScheduledCallBanner({
           : typeof payload.time === "string"
           ? parseInt(payload.time, 10)
           : undefined;
+
+      console.log(
+        "FPScheduledCallBanner - scheduledTime from payload:",
+        scheduledTime
+      );
     } else if (payload.scheduledDate) {
       scheduledDate = new Date(payload.scheduledDate);
+      console.log(
+        "FPScheduledCallBanner - scheduledDate from payload:",
+        scheduledDate
+      );
     }
   }
 
   // If we have time but not date, convert it
   if (scheduledTime && !scheduledDate) {
     scheduledDate = new Date(scheduledTime * 1000);
+    console.log(
+      "FPScheduledCallBanner - scheduledDate from time:",
+      scheduledDate
+    );
   }
 
   // Try to parse from content if payload doesn't have it
@@ -51,11 +67,18 @@ export default function FPScheduledCallBanner({
             ? contentObj.time
             : parseInt(String(contentObj.time), 10);
         scheduledDate = new Date(time * 1000);
+        console.log(
+          "FPScheduledCallBanner - scheduledDate from content:",
+          scheduledDate
+        );
       }
-    } catch {
+    } catch (e) {
       // Content is not JSON, ignore
+      console.log("FPScheduledCallBanner - Error parsing content:", e);
     }
   }
+
+  console.log("FPScheduledCallBanner - Final scheduledDate:", scheduledDate);
 
   // Format the date and time for display
   const formatDateTime = (date: Date): string => {
@@ -88,19 +111,56 @@ export default function FPScheduledCallBanner({
     }
 
     // Otherwise, show date and time
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    return `${date.getDate()} ${monthNames[date.getMonth()]}, ${date.toLocaleTimeString([], {
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    return `${date.getDate()} ${
+      monthNames[date.getMonth()]
+    }, ${date.toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
     })}`;
   };
 
-  const dateTimeText = scheduledDate ? formatDateTime(scheduledDate) : "Call scheduled";
+  // Don't render if we don't have a valid date
+  if (!scheduledDate || isNaN(scheduledDate.getTime())) {
+    console.warn(
+      "FPScheduledCallBanner - No valid scheduled date found, not rendering"
+    );
+    console.warn(
+      "FPScheduledCallBanner - scheduledCall received:",
+      scheduledCall
+    );
+    console.warn("FPScheduledCallBanner - scheduledTime:", scheduledTime);
+    console.warn("FPScheduledCallBanner - scheduledDate:", scheduledDate);
+    return null;
+  }
+
+  const dateTimeText = formatDateTime(scheduledDate);
+  console.log(
+    "FPScheduledCallBanner - Rendering banner with dateTimeText:",
+    dateTimeText
+  );
+  console.log(
+    "FPScheduledCallBanner - Banner should be visible with green background"
+  );
 
   return (
     <div
       onClick={onClick}
+      className="scheduled-call-banner"
       style={{
         display: "flex",
         alignItems: "center",
@@ -111,6 +171,8 @@ export default function FPScheduledCallBanner({
         cursor: onClick ? "pointer" : "default",
         marginBottom: "0.5rem",
         transition: "opacity 0.2s",
+        width: "100%",
+        boxSizing: "border-box",
       }}
       onMouseEnter={(e) => {
         if (onClick) {
@@ -156,16 +218,7 @@ export default function FPScheduledCallBanner({
       </div>
 
       {/* Arrow Icon */}
-      {onClick && (
-        <ChevronRight size={20} color="#FFFFFF" />
-      )}
+      {onClick && <ChevronRight size={20} color="#FFFFFF" />}
     </div>
   );
 }
-
-
-
-
-
-
-

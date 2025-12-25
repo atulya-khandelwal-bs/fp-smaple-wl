@@ -44,6 +44,8 @@ export interface Message {
   callAction?: string;
   channel?: string;
   isEdited?: boolean;
+  mid?: string; // Message ID from delivery receipt (for editing)
+  serverMsgId?: string; // Server message ID for matching edited messages
 }
 
 export interface MealPlanIconsDetails {
@@ -116,6 +118,9 @@ export interface CoachInfo {
 
 export interface LogEntry {
   log?: string;
+  message?: string; // Alternative to log for structured messages
   timestamp?: Date;
   serverMsgId?: string; // Server message ID from Agora (for editing messages)
+  mid?: string; // Message ID from delivery receipt (for editing messages)
+  isEdited?: boolean; // Flag to indicate this is an edited message
 }

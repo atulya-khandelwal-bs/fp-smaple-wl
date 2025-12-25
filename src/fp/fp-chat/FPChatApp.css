@@ -1430,6 +1430,16 @@ input {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
 
+  .scheduled-call-banner {
+    position: fixed;
+    top: 72px; /* chat-header (~60px) + nav-tabs (~50px) - moved up by 10px */
+    left: 0;
+    right: 0;
+    z-index: 98;
+    margin-bottom: 0;
+    border-radius: 0;
+  }
+
   .chat-area {
     width: 100%;
     flex: 1;
@@ -1441,6 +1451,11 @@ input {
     padding-bottom: 130px; /* message-input-area height + extra padding */
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none; /* Firefox */
+  }
+
+  /* Adjust chat area margin when banner is present */
+  .chat-area.has-banner {
+    margin-top: 160px; /* chat-header + nav-tabs + banner (~60px) - adjusted for banner moved up by 10px */
   }
 
   .chat-area::-webkit-scrollbar {

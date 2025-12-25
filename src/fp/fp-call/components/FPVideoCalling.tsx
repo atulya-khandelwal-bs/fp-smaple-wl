@@ -650,6 +650,8 @@ const FPVideoCallingInner = ({
   );
 
   // Generate token from API
+  // Prevent multiple simultaneous token generation requests
+  const isGeneratingTokenRef = useRef<boolean>(false);
   const generateToken = async (): Promise<string | null> => {
     if (!channel || typeof uid !== "number") {
       if (!isStandalone) {
@@ -659,6 +661,14 @@ const FPVideoCallingInner = ({
       }
       return null;
     }
+    
+    // Prevent multiple simultaneous token generation requests
+    if (isGeneratingTokenRef.current) {
+      console.log("Token generation already in progress, skipping...");
+      return null;
+    }
+    
+    isGeneratingTokenRef.current = true;
     setGeneratingToken(true);
     try {
       const response = await fetch(config.rtcToken.apiUrl, {
@@ -700,6 +710,7 @@ const FPVideoCallingInner = ({
       return null;
     } finally {
       setGeneratingToken(false);
+      isGeneratingTokenRef.current = false;
     }
   };
 
@@ -731,6 +742,7 @@ const FPVideoCallingInner = ({
       calling ||
       token ||
       pendingJoin ||
+      generatingToken ||
       typeof uid !== "number" ||
       uid <= 0
     ) {
@@ -757,11 +769,12 @@ const FPVideoCallingInner = ({
     };
     autoJoin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStandalone, propChannel, userId, uid, calling, token, pendingJoin]);
+  }, [isStandalone, propChannel, userId, uid, calling, token, pendingJoin, generatingToken]);
 
-  // Handle join when token is ready
+  // Handle join when token is ready - use ref to prevent multiple triggers
+  const hasJoinedRef = useRef<boolean>(false);
   useEffect(() => {
-    if (pendingJoin && token) {
+    if (pendingJoin && token && !hasJoinedRef.current && !calling) {
       console.log(
         "Token ready, joining call with token:",
         token.substring(0, 50) + "..."
@@ -769,13 +782,35 @@ const FPVideoCallingInner = ({
       console.log("App ID:", appId);
       console.log("Channel:", channel);
       console.log("UID:", uid);
+      hasJoinedRef.current = true;
       setPendingJoin(false);
       setTimeout(() => {
         console.log("Setting calling to true...");
         setCalling(true);
       }, 300);
     }
-  }, [token, pendingJoin, appId, channel, uid]);
+  }, [token, pendingJoin, appId, channel, uid, calling]);
+  
+  // Reset pendingJoin when call is actually connected or when calling becomes true
+  useEffect(() => {
+    if ((isConnected || calling) && pendingJoin) {
+      console.log("Call connected or calling=true, resetting pendingJoin", {
+        isConnected,
+        calling,
+        pendingJoin,
+      });
+      setPendingJoin(false);
+    }
+  }, [isConnected, pendingJoin, calling]);
+  
+  // Reset refs when call ends to allow new calls
+  useEffect(() => {
+    if (!calling && !pendingJoin && !generatingToken) {
+      hasJoinedRef.current = false;
+      hasAttemptedJoinRef.current = false;
+      isGeneratingTokenRef.current = false;
+    }
+  }, [calling, pendingJoin, generatingToken]);
 
   // Close more options menu when clicking outside
   useEffect(() => {

@@ -379,16 +379,7 @@ export default function FPMessageBubble({
         >
           {renderMessageContent()}
         </div>
-        <div className="message-time">
-          {msg.timestamp}
-          {msg.isEdited && (
-            <span
-              style={{ marginLeft: "4px", fontSize: "0.75em", opacity: 0.7 }}
-            >
-              (edited)
-            </span>
-          )}
-        </div>
+        <div className="message-time">{msg.timestamp}</div>
       </div>
     </div>
   );

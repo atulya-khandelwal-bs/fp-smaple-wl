@@ -80,6 +80,7 @@ export function createMessageHandlers({
   onDisconnected: () => void;
   onTextMessage: (msg: MessageBody) => void;
   onCustomMessage: (msg: MessageBody) => void;
+  onModifiedMessage: (msg: MessageBody) => void; // Agora SDK uses onModifiedMessage
   onTokenWillExpire: () => Promise<void>;
   onTokenExpired: () => Promise<void>;
   onError: (e: { message: string }) => void;
@@ -1265,6 +1266,62 @@ export function createMessageHandlers({
     onError: (e: { message: string }): void => {
       addLog(`Error: ${e.message}`);
       setIsLoggingIn(false);
+    },
+    onModifiedMessage: (msg: MessageBody): void => {
+      // Handle edited messages
+      const fromId = msg.from || "";
+      if (fromId === RECORDER_ID || String(fromId) === RECORDER_ID) {
+        console.log("🚫 Ignoring edited message from recorder (UID: 999999999)");
+        return;
+      }
+
+      console.log("📝 [onModifiedMessage] Message edited:", {
+        id: (msg as { id?: string; mid?: string }).id,
+        mid: (msg as { id?: string; mid?: string }).mid,
+        from: msg.from,
+        content: msg.msg || msg.msgContent || msg.data,
+        fullMessage: msg,
+      });
+
+      // Add the edited message to logs so it gets processed
+      // The message will have the same mid but updated content
+      const messageId =
+        (msg as { id?: string; mid?: string }).id ||
+        (msg as { id?: string; mid?: string }).mid ||
+        `${msg.from}-${msg.time}`;
+      
+      const messageContent = msg.msg || msg.msgContent || msg.data || "";
+      
+      // Extract both id and mid from the message
+      const msgId = (msg as { id?: string; mid?: string }).id;
+      const msgMid = (msg as { id?: string; mid?: string }).mid;
+      
+      // Use mid if available, otherwise use id
+      const messageIdForEditing = msgMid || msgId || messageId;
+      
+      const logEntry = {
+        type: "server",
+        serverMsgId: messageIdForEditing,
+        mid: msgMid || msgId, // Use mid if available, fallback to id
+        log: `${msg.from}: ${messageContent}`, // Use 'log' instead of 'message' to match processing logic
+        timestamp: msg.time ? new Date(msg.time) : new Date(),
+        isEdited: true, // Mark as edited
+      };
+      
+      console.log("📝 [onModifiedMessage] Adding edited message to logs:", {
+        messageIdForEditing,
+        msgId,
+        msgMid,
+        from: msg.from,
+        oldContent: "N/A (will be matched from existing)",
+        newContent: messageContent,
+        logEntry: logEntry,
+        logString: logEntry.log,
+      });
+      
+      // Add as a log entry with serverMsgId and mid to identify it as an edited message
+      // Use 'log' property to match the format expected by the message processing logic
+      addLog(logEntry);
     },
     onPresenceStatus: onPresenceStatus
       ? (presenceData: { userId: string; description: string }): void => {

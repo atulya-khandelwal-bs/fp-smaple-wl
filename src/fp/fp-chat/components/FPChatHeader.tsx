@@ -1,67 +1,22 @@
-import {
-  Video,
-  Phone,
-  ChevronDown,
-  MoreVertical,
-  BadgeCheck,
-} from "lucide-react";
+import { MoreVertical } from "lucide-react";
 import SealCheck from "../assets/SealCheck.svg";
 import { Contact } from "../../common/types/chat";
-import React, { useState, useRef, useEffect } from "react";
+import React from "react";
 import config from "../../common/config.ts";
 
 interface FPChatHeaderProps {
   selectedContact: Contact | null;
   onBackToConversations?: (() => void) | null;
-  onInitiateCall?: ((callType: "video" | "audio") => void) | null;
+  onScheduleClick?: (() => void) | null;
+  onProfileClick?: (() => void) | null;
 }
 
 export default function FPChatHeader({
   selectedContact,
   onBackToConversations,
-  onInitiateCall,
+  onScheduleClick,
+  onProfileClick,
 }: FPChatHeaderProps): React.JSX.Element {
-  const [showDropdown, setShowDropdown] = useState<boolean>(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent): void => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowDropdown(false);
-      }
-    };
-
-    if (showDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showDropdown]);
-
-  const handleVideoCall = (): void => {
-    if (onInitiateCall) {
-      onInitiateCall("video");
-    }
-    setShowDropdown(false);
-  };
-
-  const handleVoiceCall = (): void => {
-    if (onInitiateCall) {
-      onInitiateCall("audio");
-    }
-    setShowDropdown(false);
-  };
-
-  const toggleDropdown = (): void => {
-    setShowDropdown((prev) => !prev);
-  };
-
   return (
     <>
       {/* Header */}
@@ -107,12 +62,14 @@ export default function FPChatHeader({
           {/* Profile Picture */}
           {selectedContact && (
             <div
+              onClick={onProfileClick || undefined}
               style={{
                 width: "40px",
                 height: "40px",
                 borderRadius: "50%",
                 overflow: "hidden",
                 flexShrink: 0,
+                cursor: onProfileClick ? "pointer" : "default",
               }}
             >
               <img
@@ -137,11 +94,13 @@ export default function FPChatHeader({
               }}
             >
               <h2
+                onClick={onProfileClick || undefined}
                 style={{
                   margin: 0,
                   fontSize: "1rem",
                   fontWeight: 600,
                   textAlign: "left",
+                  cursor: onProfileClick ? "pointer" : "default",
                 }}
               >
                 {selectedContact?.name || "Select a Contact"}
@@ -185,11 +144,12 @@ export default function FPChatHeader({
             {/* Three Dot Menu Icon */}
             <button
               title="More options"
+              onClick={onScheduleClick || undefined}
               style={{
                 background: "none",
                 border: "none",
                 color: "var(--text)",
-                cursor: "pointer",
+                cursor: onScheduleClick ? "pointer" : "default",
                 padding: "0.5rem",
                 display: "flex",
                 alignItems: "center",
@@ -198,7 +158,9 @@ export default function FPChatHeader({
                 transition: "background-color 0.2s",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(0, 0, 0, 0.05)";
+                if (onScheduleClick) {
+                  e.currentTarget.style.backgroundColor = "rgba(0, 0, 0, 0.05)";
+                }
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = "transparent";
@@ -206,7 +168,7 @@ export default function FPChatHeader({
             >
               <MoreVertical size={24} />
             </button>
-            Video Call Button
+            {/* Video Call Button
             {onInitiateCall && (
               <div
                 ref={dropdownRef}
@@ -313,8 +275,8 @@ export default function FPChatHeader({
                     </button>
                   </div>
                 )}
-              </div>
-            )}
+              </div> 
+            )}*/}
           </div>
         )}
       </div>

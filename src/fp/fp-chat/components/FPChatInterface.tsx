@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import config from "../../common/config.ts";
 import FPChatHeader from "./FPChatHeader";
@@ -13,6 +13,7 @@ import FPImageViewer from "./FPImageViewer";
 import FPVideoPlayer from "./FPVideoPlayer";
 import FPAudioPlayer from "./FPAudioPlayer";
 import FPScheduleCallModal from "./FPScheduleCallModal";
+import FPProfileModal from "./FPProfileModal";
 import FPScheduledCallBanner from "./FPScheduledCallBanner";
 import {
   formatMessage,
@@ -20,6 +21,7 @@ import {
   parseSystemPayload,
   getSystemLabel,
 } from "../utils/messageFormatters.ts";
+import { cancelCallWithDietitian } from "../services/dietitianApi";
 
 // Import types from messageFormatters
 interface AgoraMessage {
@@ -87,9 +89,25 @@ interface FPChatInterfaceProps {
   onBackToConversations?: (() => void) | null;
   onInitiateCall?: ((callType: "video" | "audio") => void) | null;
   onScheduleClick?: (() => void) | null;
-  onSchedule?: ((date: Date, time: string, topic: string) => void) | null;
+  onSchedule?:
+    | ((
+        date: Date,
+        time: string,
+        topic: string,
+        callType: "video" | "audio"
+      ) => void)
+    | null;
   onUpdateLastMessageFromHistory?: (peerId: string, message: Message) => void;
+  onMessagesLoadedFromHistory?: (messageIds: string[]) => void;
   coachInfo?: CoachInfo;
+  scheduledCallFromApi?: {
+    date: string;
+    start_time: string;
+    call_date_time: number;
+    schedule_call_id: number;
+    call_type?: "video" | "audio";
+  } | null;
+  onRefreshScheduledCall?: () => Promise<void>;
 }
 
 export default function FPChatInterface({
@@ -108,7 +126,10 @@ export default function FPChatInterface({
   onScheduleClick,
   onSchedule,
   onUpdateLastMessageFromHistory,
+  onMessagesLoadedFromHistory,
   coachInfo = { coachName: "", profilePhoto: "" },
+  scheduledCallFromApi,
+  onRefreshScheduledCall,
 }: FPChatInterfaceProps): React.JSX.Element {
   const [messages, setMessages] = useState<Message[]>([]);
   const [showMediaPopup, setShowMediaPopup] = useState<boolean>(false);
@@ -308,7 +329,11 @@ export default function FPChatInterface({
     // Find the index of each log entry and create a unique identifier
     // Handle both old format (string) and new format (object with log and timestamp)
     const logEntries = logs.map((logEntry, logIndex) => {
-      const log = typeof logEntry === "string" ? logEntry : logEntry.log;
+      // Check for both 'log' and 'message' properties (message is used for edited messages)
+      const log =
+        typeof logEntry === "string"
+          ? logEntry
+          : logEntry.log || logEntry.message;
       // For log entries that are strings, we can't determine the actual timestamp
       // They will be replaced by server messages when history is fetched
       // For now, use current time but this will be corrected when messages are fetched from server
@@ -316,17 +341,27 @@ export default function FPChatInterface({
         typeof logEntry === "string"
           ? new Date() // Will be replaced by server timestamp when history is fetched
           : logEntry.timestamp || new Date();
-      // Extract serverMsgId from log entry if available (for message editing)
+      // Extract serverMsgId, mid, and isEdited from log entry if available (for message editing)
       const serverMsgId =
         typeof logEntry === "object" && "serverMsgId" in logEntry
           ? logEntry.serverMsgId
           : undefined;
+      const mid =
+        typeof logEntry === "object" && "mid" in logEntry
+          ? logEntry.mid
+          : undefined;
+      const isEdited =
+        typeof logEntry === "object" && "isEdited" in logEntry
+          ? logEntry.isEdited
+          : false;
       return {
         log,
         timestamp,
         logIndex,
         logHash: log ? hashLog(log) : 0, // Create hash of entire log for stable ID
         serverMsgId, // Include serverMsgId in the log entry data
+        mid, // Include mid in the log entry data
+        isEdited, // Include isEdited flag in the log entry data
       };
     });
 
@@ -349,7 +384,31 @@ export default function FPChatInterface({
     });
 
     const newMessages = filteredLogs
-      .map(({ log, logHash, logIndex, timestamp, serverMsgId }) => {
+      .map((entry) => {
+        const {
+          log,
+          logHash,
+          logIndex,
+          timestamp,
+          serverMsgId,
+          mid,
+          isEdited: logIsEdited,
+        } = entry;
+
+        // Debug log for edited messages
+        if (logIsEdited) {
+          console.log(
+            "🔍 [Log Processing] Processing edited message from log:",
+            {
+              log: log,
+              serverMsgId: serverMsgId,
+              mid: mid,
+              isEdited: logIsEdited,
+              entry: entry,
+            }
+          );
+        }
+
         if (!log) return null;
         const isOutgoing = log.includes("→");
         const messageTime =
@@ -1115,6 +1174,12 @@ export default function FPChatInterface({
                 : []
               : products;
 
+          // Get mid, serverMsgId, and isEdited from log entry if available
+          // These are already extracted from entry in the map function above
+          const messageMid = mid || serverMsgId;
+          const messageServerMsgId = serverMsgId;
+          const messageIsEdited = logIsEdited || false;
+
           return {
             id: generatedId, // Include logIndex and timestamp to ensure unique IDs for consecutive duplicate messages
             sender,
@@ -1143,7 +1208,33 @@ export default function FPChatInterface({
             isIncoming: true, // Incoming message - left side
             avatar: selectedContact?.avatar || config.defaults.avatar,
             peerId, // Store peerId for conversation tracking
+            mid: messageMid, // Message ID from delivery receipt (for editing)
+            serverMsgId: messageServerMsgId, // Server message ID (for matching edited messages)
+            isEdited: messageIsEdited, // Flag to indicate this is an edited message
           };
+
+          // Debug log for edited messages - show the created message object
+          if (messageIsEdited) {
+            console.log(
+              "✅ [Message Creation] Created edited message object:",
+              {
+                id: generatedId,
+                content: messageContent,
+                serverMsgId: messageServerMsgId,
+                mid: messageMid,
+                isEdited: messageIsEdited,
+                sender: sender,
+                fullMessage: {
+                  id: generatedId,
+                  sender,
+                  content: messageContent,
+                  mid: messageMid,
+                  serverMsgId: messageServerMsgId,
+                  isEdited: messageIsEdited,
+                },
+              }
+            );
+          }
         }
       })
       .filter((msg) => msg !== null); // Filter out null messages (hidden call messages)
@@ -1156,6 +1247,36 @@ export default function FPChatInterface({
 
       // Create a set of existing message IDs to prevent duplicates
       const existingIds = new Set(currentPeerMessages.map((msg) => msg.id));
+
+      // Create a map of existing messages by mid, serverMsgId, and id to detect edited messages
+      const existingMessagesByMid = new Map<string, Message>();
+      const existingMessagesByServerId = new Map<string, Message>();
+      const existingMessagesById = new Map<string, Message>();
+      currentPeerMessages.forEach((msg) => {
+        if (msg.mid) {
+          existingMessagesByMid.set(msg.mid, msg);
+        }
+        // Map by serverMsgId - this is the key for matching edited messages
+        if (msg.serverMsgId) {
+          existingMessagesByServerId.set(msg.serverMsgId, msg);
+        }
+        // Also map by id - edited messages might have the same id
+        existingMessagesById.set(msg.id, msg);
+        // Also map by the message's server ID if it's a server message (id doesn't start with outgoing-/incoming-)
+        // This helps match edited messages that come with the same server ID
+        if (
+          !msg.id.startsWith("outgoing-") &&
+          !msg.id.startsWith("incoming-")
+        ) {
+          existingMessagesByServerId.set(msg.id, msg);
+        }
+      });
+
+      console.log("🔍 [Message Matching] Existing messages mapped:", {
+        byMid: Array.from(existingMessagesByMid.keys()),
+        byServerId: Array.from(existingMessagesByServerId.keys()),
+        totalMessages: currentPeerMessages.length,
+      });
 
       // Helper function to create matching key (same as in server fetch)
       const normalizeContent = (content: string | null | undefined): string => {
@@ -1380,11 +1501,76 @@ export default function FPChatInterface({
         }
       });
 
+      // Process new messages: detect edited messages and update existing ones
+      const processedNewMessages = newMessages.map((msg) => {
+        // Check if this is an edited message by mid, serverMsgId, or id
+        let existingMsg: Message | undefined;
+
+        // First check by mid (preferred for edited messages)
+        if (msg.mid) {
+          existingMsg = existingMessagesByMid.get(msg.mid);
+        }
+
+        // If not found by mid, check by serverMsgId (this is the server message ID from Agora)
+        if (!existingMsg && msg.serverMsgId) {
+          existingMsg = existingMessagesByServerId.get(msg.serverMsgId);
+        }
+
+        // If not found, check by id (edited messages might have same id)
+        // But only if the message is marked as edited
+        if (!existingMsg && msg.id && msg.isEdited) {
+          existingMsg = existingMessagesById.get(msg.id);
+        }
+
+        // If we found an existing message with the same mid/serverMsgId/id and this is marked as edited
+        if (existingMsg && (msg.isEdited || msg.mid || msg.serverMsgId)) {
+          console.log(
+            "✅ [Message Processing] Found existing message for edit:",
+            {
+              existingId: existingMsg.id,
+              existingContent: existingMsg.content,
+              existingServerMsgId: existingMsg.serverMsgId,
+              newContent: msg.content,
+              newServerMsgId: msg.serverMsgId,
+              msgIsEdited: msg.isEdited,
+              msgMid: msg.mid,
+              msgServerMsgId: msg.serverMsgId,
+              fullMsg: msg,
+            }
+          );
+
+          // This is an edited message - mark it for update
+          // IMPORTANT: Keep the new content from msg (the edited message)
+          return {
+            ...msg,
+            id: existingMsg.id, // Keep the original generated ID
+            mid: msg.mid || existingMsg.mid, // Preserve mid if available
+            serverMsgId: msg.serverMsgId || existingMsg.serverMsgId, // Preserve serverMsgId
+            isEdited: true, // Mark as edited
+            // Content should already be in msg.content from the log parsing
+          };
+        }
+        return msg;
+      });
+
       // Filter out messages that match existing messages by content/key (not just ID)
       // This prevents duplicates when server messages already exist
-      const uniqueNewMessages = newMessages.filter((msg) => {
+      const uniqueNewMessages = processedNewMessages.filter((msg) => {
         // First check by ID (for exact duplicates)
         if (existingIds.has(msg.id)) {
+          // If this is an edited message, we still want to process it
+          if (msg.isEdited && (msg.mid || msg.serverMsgId)) {
+            console.log(
+              "✅ [Filter] Allowing edited message through (by ID check):",
+              {
+                msgId: msg.id,
+                msgMid: msg.mid,
+                msgServerMsgId: msg.serverMsgId,
+                msgContent: msg.content,
+              }
+            );
+            return true; // Allow edited messages to pass through
+          }
           return false;
         }
         // Then check by content/key (to match with server messages that have different IDs)
@@ -1402,7 +1588,12 @@ export default function FPChatInterface({
             !msg.id.startsWith("outgoing-") && !msg.id.startsWith("incoming-");
 
           // If existing is server and new is log, filter out the new log message
+          // UNLESS it's an edited message (we need it to update the existing message)
           if (isExistingServerMsg && isNewLogMsg) {
+            // Allow edited messages through so they can update existing messages
+            if (msg.isEdited && (msg.mid || msg.serverMsgId)) {
+              return true;
+            }
             return false;
           }
           // If existing is log and new is server, keep the server message
@@ -1415,7 +1606,21 @@ export default function FPChatInterface({
             return false;
           }
           // If both are server messages with same key, filter out the new one
+          // UNLESS it's an edited message (same mid or serverMsgId)
           if (isExistingServerMsg && isNewServerMsg) {
+            // If this is an edited message, allow it through
+            if (msg.isEdited && (msg.mid || msg.serverMsgId)) {
+              console.log(
+                "✅ [Filter] Allowing edited message through (by key match):",
+                {
+                  msgId: msg.id,
+                  msgMid: msg.mid,
+                  msgServerMsgId: msg.serverMsgId,
+                  msgContent: msg.content,
+                }
+              );
+              return true;
+            }
             return false;
           }
         }
@@ -1433,10 +1638,208 @@ export default function FPChatInterface({
       }
 
       // Merge: keep existing messages for this peer + add new unique ones
+      // First, handle edited messages - update existing messages with same mid or id
+      console.log("🔍 [Message Merge] Starting merge process:", {
+        currentPeerMessagesCount: currentPeerMessages.length,
+        uniqueNewMessagesCount: uniqueNewMessages.length,
+        uniqueNewMessagesWithIsEdited: uniqueNewMessages.filter(
+          (m) => m.isEdited
+        ).length,
+        uniqueNewMessagesDetails: uniqueNewMessages
+          .filter((m) => m.isEdited)
+          .map((m) => ({
+            id: m.id,
+            content: m.content,
+            serverMsgId: m.serverMsgId,
+            mid: m.mid,
+            isEdited: m.isEdited,
+          })),
+        existingMessagesByServerId: Array.from(
+          existingMessagesByServerId.keys()
+        ),
+        existingMessagesByMid: Array.from(existingMessagesByMid.keys()),
+      });
+
+      const updatedMessages = currentPeerMessages.map((existingMsg) => {
+        // Find ALL matching edited messages (there might be duplicates)
+        const allMatchingEditedMsgs = uniqueNewMessages.filter((newMsg) => {
+          if (!newMsg.isEdited) return false;
+
+          // Check by mid
+          if (newMsg.mid && existingMsg.mid && newMsg.mid === existingMsg.mid) {
+            return true;
+          }
+
+          // Check by serverMsgId
+          if (
+            newMsg.serverMsgId &&
+            existingMsg.serverMsgId &&
+            newMsg.serverMsgId === existingMsg.serverMsgId
+          ) {
+            return true;
+          }
+
+          // Check by id
+          if (newMsg.id === existingMsg.id) {
+            return true;
+          }
+
+          return false;
+        });
+
+        // If multiple matches, prefer the one with the most recent timestamp or different content
+        // Sort by timestamp (most recent first) or by content length (longer = likely newer edit)
+        let editedMsg =
+          allMatchingEditedMsgs.length > 0
+            ? allMatchingEditedMsgs.sort((a, b) => {
+                // First, prefer messages with different content (actual edits)
+                const aIsDifferent = a.content !== existingMsg.content;
+                const bIsDifferent = b.content !== existingMsg.content;
+                if (aIsDifferent && !bIsDifferent) return -1;
+                if (!aIsDifferent && bIsDifferent) return 1;
+
+                // If both are different or both same, prefer longer content (more recent edit)
+                if (a.content.length !== b.content.length) {
+                  return b.content.length - a.content.length;
+                }
+
+                // If same length, prefer by timestamp if available
+                const aTime = a.createdAt
+                  ? typeof a.createdAt === "string"
+                    ? new Date(a.createdAt).getTime()
+                    : a.createdAt.getTime()
+                  : 0;
+                const bTime = b.createdAt
+                  ? typeof b.createdAt === "string"
+                    ? new Date(b.createdAt).getTime()
+                    : b.createdAt.getTime()
+                  : 0;
+                return bTime - aTime;
+              })[0]
+            : null;
+
+        if (allMatchingEditedMsgs.length > 1) {
+          console.log(
+            "⚠️ [Message Merge] Multiple edited messages found, selecting most recent:",
+            {
+              existingId: existingMsg.id,
+              existingContent: existingMsg.content,
+              allMatches: allMatchingEditedMsgs.map((m) => ({
+                id: m.id,
+                content: m.content,
+                contentLength: m.content.length,
+                isDifferent: m.content !== existingMsg.content,
+                createdAt: m.createdAt,
+              })),
+              selected: editedMsg
+                ? {
+                    id: editedMsg.id,
+                    content: editedMsg.content,
+                  }
+                : null,
+            }
+          );
+        }
+
+        // Debug: log if we're looking for a match for this message
+        if (existingMsg.serverMsgId || existingMsg.mid) {
+          console.log("🔍 [Message Merge] Checking for edit match:", {
+            existingId: existingMsg.id,
+            existingServerMsgId: existingMsg.serverMsgId,
+            existingMid: existingMsg.mid,
+            existingContent: existingMsg.content,
+            foundMatch: !!editedMsg,
+            matchingMsg: editedMsg
+              ? {
+                  id: editedMsg.id,
+                  content: editedMsg.content,
+                  serverMsgId: editedMsg.serverMsgId,
+                  mid: editedMsg.mid,
+                  isEdited: editedMsg.isEdited,
+                }
+              : null,
+          });
+        }
+
+        if (editedMsg) {
+          console.log(
+            "🔄 [Message Update] MATCHED - Updating edited message:",
+            {
+              existingId: existingMsg.id,
+              existingMid: existingMsg.mid,
+              existingServerMsgId: existingMsg.serverMsgId,
+              existingContent: existingMsg.content,
+              existingIsEdited: existingMsg.isEdited,
+              newId: editedMsg.id,
+              newMid: editedMsg.mid,
+              newServerMsgId: editedMsg.serverMsgId,
+              newContent: editedMsg.content,
+              newIsEdited: editedMsg.isEdited,
+              editedMsgFull: editedMsg,
+              existingMsgFull: existingMsg,
+            }
+          );
+
+          // Update the existing message with new content and mark as edited
+          // Ensure we're using the new content from the edited message
+          const newContent = editedMsg.content || existingMsg.content;
+          const contentChanged = newContent !== existingMsg.content;
+
+          console.log("🔄 [Message Update] Content analysis:", {
+            oldContent: existingMsg.content,
+            newContent: newContent,
+            editedMsgContent: editedMsg.content,
+            contentChanged: contentChanged,
+            willUpdate: contentChanged || !existingMsg.isEdited,
+          });
+
+          const updatedMessage = {
+            ...existingMsg,
+            content: newContent, // Use the new content from edited message
+            isEdited: true,
+            mid: editedMsg.mid || existingMsg.mid, // Preserve mid if available
+            serverMsgId: editedMsg.serverMsgId || existingMsg.serverMsgId, // Preserve serverMsgId
+            // Update other fields that might have changed
+            messageType: editedMsg.messageType || existingMsg.messageType,
+            imageUrl: editedMsg.imageUrl || existingMsg.imageUrl,
+            audioUrl: editedMsg.audioUrl || existingMsg.audioUrl,
+            fileUrl: editedMsg.fileUrl || existingMsg.fileUrl,
+          };
+
+          console.log("🔄 [Message Update] FINAL RESULT:", {
+            before: {
+              id: existingMsg.id,
+              content: existingMsg.content,
+              isEdited: existingMsg.isEdited,
+            },
+            after: {
+              id: updatedMessage.id,
+              content: updatedMessage.content,
+              isEdited: updatedMessage.isEdited,
+            },
+            contentUpdated: updatedMessage.content !== existingMsg.content,
+            fullUpdatedMessage: updatedMessage,
+          });
+
+          return updatedMessage;
+        }
+        return existingMsg;
+      });
+
+      // Filter out edited messages from uniqueNewMessages (they've been merged into updatedMessages)
+      const updatedMids = new Set(
+        uniqueNewMessages
+          .filter((msg) => msg.mid && msg.isEdited)
+          .map((msg) => msg.mid!)
+      );
+      const newMessagesWithoutEdited = uniqueNewMessages.filter(
+        (msg) => !msg.mid || !updatedMids.has(msg.mid)
+      );
+
       // First, collect all server messages and their match keys
       const allMessagesTemp = [
-        ...currentPeerMessages,
-        ...uniqueNewMessages,
+        ...updatedMessages,
+        ...newMessagesWithoutEdited,
       ].filter((msg) => msg !== null && msg.createdAt); // Filter out null messages and messages without createdAt
 
       const serverMessageKeys = new Set();
@@ -3055,6 +3458,55 @@ export default function FPChatInterface({
         return finalMessages;
       });
 
+      // Mark all loaded message IDs as processed to prevent polling from processing them again
+      // Include both primary IDs and fallback ID formats (from-time) to match polling logic
+      if (onMessagesLoadedFromHistory && oldMessages.length > 0) {
+        const messageIds = new Set<string>();
+
+        // Add all possible ID formats from original Agora messages (before filtering)
+        // This ensures we catch all messages, even if they were filtered out later
+        oldMessages.forEach((agoraMsg) => {
+          // Primary ID formats
+          if (agoraMsg.id) {
+            messageIds.add(agoraMsg.id);
+          }
+          if (agoraMsg.mid) {
+            messageIds.add(agoraMsg.mid);
+          }
+          // Fallback format: `${from}-${time}` (matches polling mechanism)
+          if (agoraMsg.from && agoraMsg.time) {
+            // Convert time to seconds if it's in milliseconds
+            const timeInSeconds =
+              agoraMsg.time > 1000000000000
+                ? Math.floor(agoraMsg.time / 1000)
+                : agoraMsg.time;
+            messageIds.add(`${agoraMsg.from}-${timeInSeconds}`);
+          }
+        });
+
+        // Also add formatted message IDs (in case formatMessage generates different IDs)
+        deduplicatedFormatted.forEach((msg) => {
+          if (msg.id) {
+            messageIds.add(msg.id);
+          }
+        });
+
+        if (messageIds.size > 0) {
+          onMessagesLoadedFromHistory(Array.from(messageIds));
+          console.log(
+            "✅ [fetchInitialMessages] Marked messages as processed:",
+            messageIds.size,
+            "unique IDs from",
+            oldMessages.length,
+            "messages"
+          );
+          console.log(
+            "📋 [fetchInitialMessages] Sample IDs:",
+            Array.from(messageIds).slice(0, 5)
+          );
+        }
+      }
+
       // Scroll to bottom after initial messages are loaded
       setTimeout(() => {
         scrollToBottom();
@@ -3553,182 +4005,173 @@ export default function FPChatInterface({
   };
 
   const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
+  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
 
   const handleScheduleClick = (): void => {
     setShowScheduleModal(true);
   };
 
-  const handleSchedule = (date: Date, time: string, topics: string[]): void => {
+  const handleSchedule = (
+    date: Date,
+    time: string,
+    topics: string[],
+    callType: "video" | "audio"
+  ): void => {
     if (onSchedule) {
-      onSchedule(date, time, topics.join(", "));
+      onSchedule(date, time, topics.join(", "), callType);
     }
     setShowScheduleModal(false);
   };
 
   // Find the most recent scheduled call message
   const getScheduledCall = (): Message | null => {
-    // Filter for scheduled calls (not cancelled) in current conversation
-    const scheduledCalls = currentConversationMessages.filter(
-      (msg) =>
-        msg.messageType === "call_scheduled" &&
-        msg.messageType !== "scheduled_call_canceled"
+    console.log(
+      "getScheduledCall - scheduledCallFromApi:",
+      scheduledCallFromApi
     );
 
-    if (scheduledCalls.length === 0) {
-      // Also check if content contains call_scheduled
-      const contentScheduledCalls = currentConversationMessages.filter((msg) => {
-        if (typeof msg.content === "string") {
-          try {
-            const contentObj = JSON.parse(msg.content) as {
-              type?: string;
-              time?: number | string;
-            };
-            return contentObj.type === "call_scheduled";
-          } catch {
-            return false;
-          }
-        }
-        return false;
-      });
-
-      if (contentScheduledCalls.length === 0) return null;
-
-      // Use the most recent from content-based calls
-      const mostRecent = contentScheduledCalls[contentScheduledCalls.length - 1];
-
-      // Try to extract time from content
-      let scheduledTime: number | undefined;
-      if (typeof mostRecent.content === "string") {
-        try {
-          const contentObj = JSON.parse(mostRecent.content) as {
-            type?: string;
-            time?: number | string;
-          };
-          if (contentObj.time !== undefined) {
-            scheduledTime =
-              typeof contentObj.time === "number"
-                ? contentObj.time
-                : typeof contentObj.time === "string"
-                ? parseInt(contentObj.time, 10)
-                : undefined;
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      }
-
-      if (scheduledTime) {
-        const scheduledDate = new Date(scheduledTime * 1000);
-        const now = new Date();
-        // Show if scheduled time is in the future or within the last hour (in case of slight time differences)
-        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-        if (scheduledDate > oneHourAgo) {
-          // Create a proper message object for the banner
-          return {
-            ...mostRecent,
-            messageType: "call_scheduled",
-            system: {
-              kind: "call_scheduled",
-              payload: {
-                time: scheduledTime,
-              },
-            },
-          };
-        }
-      }
-
-      return null;
-    }
-
-    // Get the most recent one (last in array)
-    const mostRecent = scheduledCalls[scheduledCalls.length - 1];
-
-    // Check if the scheduled time is in the future
-    let scheduledTime: number | undefined;
-    if (mostRecent.system?.payload) {
-      const payload = mostRecent.system.payload as {
-        time?: number | string;
-      };
-      if (payload.time !== undefined) {
-        scheduledTime =
-          typeof payload.time === "number"
-            ? payload.time
-            : typeof payload.time === "string"
-            ? parseInt(payload.time, 10)
-            : undefined;
-      }
-    }
-
-    // Also try to extract from content if payload doesn't have it
-    if (!scheduledTime && typeof mostRecent.content === "string") {
-      try {
-        const contentObj = JSON.parse(mostRecent.content) as {
-          type?: string;
-          time?: number | string;
-        };
-        if (contentObj.time !== undefined) {
-          scheduledTime =
-            typeof contentObj.time === "number"
-              ? contentObj.time
-              : typeof contentObj.time === "string"
-              ? parseInt(contentObj.time, 10)
-              : undefined;
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    }
-
-    if (scheduledTime) {
-      const scheduledDate = new Date(scheduledTime * 1000);
+    // First, check if we have a scheduled call from API with valid data
+    if (
+      scheduledCallFromApi &&
+      scheduledCallFromApi.call_date_time &&
+      scheduledCallFromApi.date &&
+      scheduledCallFromApi.start_time
+    ) {
+      console.log("getScheduledCall - scheduledCallFromApi has valid data");
+      const scheduledDate = new Date(
+        scheduledCallFromApi.call_date_time * 1000
+      );
       const now = new Date();
-      // Show if scheduled time is in the future or within the last hour (in case of slight time differences)
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-      if (scheduledDate > oneHourAgo) {
-        return mostRecent;
+      console.log("getScheduledCall - scheduledDate:", scheduledDate);
+      console.log("getScheduledCall - now:", now);
+      console.log(
+        "getScheduledCall - scheduledDate > now?",
+        scheduledDate > now
+      );
+
+      // Show if scheduled time is in the future (don't filter by one hour ago, show all future calls)
+      if (scheduledDate > now) {
+        console.log("getScheduledCall - Creating message object for banner");
+        // Create a message object for the banner
+        return {
+          id: `api-scheduled-${scheduledCallFromApi.call_date_time}`,
+          sender: userId || "",
+          isIncoming: false,
+          content: JSON.stringify({
+            type: "call_scheduled",
+            time: scheduledCallFromApi.call_date_time,
+          }),
+          messageType: "call_scheduled",
+          timestamp: scheduledDate.toISOString(),
+          peerId: peerId || "",
+          system: {
+            kind: "call_scheduled",
+            payload: {
+              time: scheduledCallFromApi.call_date_time,
+            },
+          },
+        };
+      } else {
+        console.log(
+          "getScheduledCall - Scheduled date is in the past, not showing"
+        );
       }
+    } else {
+      console.log(
+        "getScheduledCall - scheduledCallFromApi is missing or invalid:",
+        {
+          exists: !!scheduledCallFromApi,
+          hasCallDateTime: !!scheduledCallFromApi?.call_date_time,
+          hasDate: !!scheduledCallFromApi?.date,
+          hasStartTime: !!scheduledCallFromApi?.start_time,
+        }
+      );
     }
 
+    // No fallback to messages - only use scheduledCallFromApi as single source of truth
     return null;
   };
 
-  const scheduledCall = getScheduledCall();
+  // Memoize scheduledCall to ensure it updates immediately when scheduledCallFromApi changes
+  const scheduledCall = useMemo(() => {
+    return getScheduledCall();
+  }, [scheduledCallFromApi, messages, userId, peerId]);
+
+  // Debug: Log scheduled call info
+  useEffect(() => {
+    if (scheduledCallFromApi) {
+      console.log("scheduledCallFromApi:", scheduledCallFromApi);
+    }
+    if (scheduledCall) {
+      console.log("scheduledCall found:", scheduledCall);
+    } else {
+      console.log("No scheduled call found");
+    }
+  }, [scheduledCallFromApi, scheduledCall]);
+
+  // Handle cancel call
+  const handleCancelCall = async (): Promise<void> => {
+    if (!scheduledCallFromApi?.schedule_call_id) {
+      console.error("No schedule_call_id available to cancel call");
+      return;
+    }
+
+    try {
+      await cancelCallWithDietitian(scheduledCallFromApi.schedule_call_id);
+      console.log("Call cancelled successfully");
+
+      // Refresh the scheduled call data to update the UI
+      if (onRefreshScheduledCall) {
+        await onRefreshScheduledCall();
+      }
+    } catch (error) {
+      console.error("Error cancelling call:", error);
+      // You might want to show an error message to the user here
+    }
+  };
+
+  // Determine if banner should be shown
+  const shouldShowBanner = (): boolean => {
+    if (
+      scheduledCall &&
+      scheduledCall.system?.payload?.time &&
+      typeof scheduledCall.system.payload.time === "number"
+    ) {
+      const scheduledTime = scheduledCall.system.payload.time as number;
+      const scheduledDate = new Date(scheduledTime * 1000);
+      const now = new Date();
+      return scheduledDate > now;
+    }
+    return false;
+  };
+
+  const isBannerVisible = shouldShowBanner();
 
   return (
     <div className="chat-interface" style={{ position: "relative" }}>
       <FPChatHeader
         selectedContact={selectedContact}
         onBackToConversations={onBackToConversations}
-        onInitiateCall={onInitiateCall}
         onScheduleClick={handleScheduleClick}
+        onProfileClick={() => setShowProfileModal(true)}
       />
-
-      {/* Scheduled Call Banner */}
-      {scheduledCall && (
+      {isBannerVisible && (
         <FPScheduledCallBanner
-          scheduledCall={scheduledCall}
+          scheduledCall={scheduledCall!}
           onClick={() => {
-            // Scroll to the scheduled call message
-            if (scheduledCall && chatAreaRef.current) {
-              const messageElement = document.getElementById(
-                `message-${scheduledCall.id}`
-              );
-              if (messageElement) {
-                messageElement.scrollIntoView({ behavior: "smooth", block: "center" });
-              } else {
-                // Fallback: scroll to bottom
-                chatAreaRef.current?.scrollTo({
-                  top: chatAreaRef.current.scrollHeight,
-                  behavior: "smooth",
-                });
-              }
+            // Initiate call with the scheduled call type
+            if (onInitiateCall && scheduledCallFromApi) {
+              const callType = scheduledCallFromApi.call_type || "video";
+              onInitiateCall(callType);
             }
           }}
         />
       )}
-
       {/* Chat Area */}
-      <div className="chat-area" ref={chatAreaRef}>
+      <div
+        className={`chat-area ${isBannerVisible ? "has-banner" : ""}`}
+        ref={chatAreaRef}
+      >
         {isFetchingHistory && (
           <div
             style={{
@@ -3873,6 +4316,23 @@ export default function FPChatInterface({
           onClose={() => setShowScheduleModal(false)}
           onSchedule={handleSchedule}
           selectedContact={selectedContact}
+          scheduledCallFromApi={scheduledCallFromApi}
+          onCancelCall={handleCancelCall}
+        />
+      )}
+
+      {/* Profile Modal */}
+      {selectedContact && (
+        <FPProfileModal
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+          selectedContact={selectedContact}
+          scheduledCallFromApi={scheduledCallFromApi}
+          onCancelCall={handleCancelCall}
+          onScheduleCall={() => {
+            setShowProfileModal(false);
+            setShowScheduleModal(true);
+          }}
         />
       )}
 
