@@ -280,7 +280,7 @@
   height: 100%;
 }
 
-/* Video container */
+/* Video container for virtual background */
 .video-container {
   position: relative;
   width: 100%;
@@ -293,8 +293,43 @@
   justify-content: center;
 }
 
-.video-container video,
-.video-container canvas {
+.video-container.virtual-bg {
+  background: #000;
+}
+
+/* Virtual background styling - MUST be behind video */
+.video-container.virtual-bg .virtual-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.video-container.virtual-bg .blur-background {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+  filter: blur(20px);
+  transform: scale(1.1);
+  border-radius: 8px;
+}
+
+.video-container.virtual-bg .background-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+
+/* Video must be on top with transparent background for CSS fallback */
+.video-container.virtual-bg video,
+.video-container.virtual-bg canvas {
   position: relative;
   z-index: 10;
   background: transparent !important;
@@ -734,8 +769,121 @@
   cursor: not-allowed;
 }
 
+/* ========================================
+   VIRTUAL BACKGROUND OPTIONS PANEL
+   ======================================== */
+.background-options-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  padding: 1.5rem;
+  z-index: 1000;
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
+.background-options-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.background-options-header h3 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #6c757d;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+.close-button:hover {
+  background-color: #f8f9fa;
+}
+
+.background-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+}
+
+.background-option {
+  background: none;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  padding: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100px;
+}
+
+.background-option:hover {
+  border-color: #007bff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.2);
+}
+
+.background-option.selected {
+  border-color: #007bff;
+  background-color: rgba(0, 123, 255, 0.1);
+}
+
+.background-preview {
+  width: 100%;
+  height: 60px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.blur-preview {
+  background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+  filter: blur(2px);
+}
+
+.blur-icon {
+  font-size: 1.5rem;
+  z-index: 1;
+  position: relative;
+}
+
+.background-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.background-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #2c3e50;
+  text-align: center;
+}
 
 /* ========================================
    RESPONSIVE DESIGN
@@ -826,6 +974,57 @@
   color: #888;
 }
 
+/* ========================================
+   VIRTUAL BACKGROUND — UPDATED
+   ======================================== */
+.video-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+.virtual-background-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #000;
+}
+
+.virtual-background-layer.blur {
+  filter: blur(20px);
+  transform: scale(1.1);
+  background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+}
+
+.virtual-background-layer.image {
+  background-size: cover;
+  background-position: center;
+}
+
+.video-container video,
+.video-container canvas {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.video-container.virtual-bg-active {
+  border: 2px solid #9c27b0;
+  box-shadow: 0 0 10px rgba(156, 39, 176, 0.4);
+  transition: all 0.3s ease;
+}
 
 .device-selectors {
   display: flex;

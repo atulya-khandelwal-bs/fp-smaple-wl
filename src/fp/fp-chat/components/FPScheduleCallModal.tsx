@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { X, Phone } from "lucide-react";
+import axios from "axios";
 import { Contact } from "../../common/types/chat";
 import config from "../../common/config.ts";
 import {
@@ -18,6 +19,7 @@ interface FPScheduleCallModalProps {
     callType: "video" | "audio"
   ) => void;
   selectedContact: Contact | null;
+  userId: string;
   scheduledCallFromApi?: {
     date: string;
     start_time: string;
@@ -32,6 +34,7 @@ export default function FPScheduleCallModal({
   onClose,
   onSchedule,
   selectedContact,
+  userId,
   scheduledCallFromApi,
   onCancelCall,
 }: FPScheduleCallModalProps): React.JSX.Element | null {
@@ -299,6 +302,27 @@ export default function FPScheduleCallModal({
         health_coach_id: health_coach_id,
         start_time: selectedTime,
       });
+
+      // Send custom message for call scheduled
+      if (selectedContact) {
+        try {
+          const body = {
+            from: userId,
+            to: selectedContact.id,
+            type: "call_scheduled",
+            data: {
+              type: "call_scheduled",
+              time: call_date_time, // Unix timestamp in seconds
+            },
+          };
+
+          await axios.post(config.api.customMessage, body);
+          console.log("Call scheduled custom message sent successfully");
+        } catch (error) {
+          console.error("Error sending call scheduled custom message:", error);
+          // Don't block the scheduling flow if this fails
+        }
+      }
 
       // Call the onSchedule callback for any additional handling
       // Convert "Video"/"Voice" to "video"/"audio" for the callback

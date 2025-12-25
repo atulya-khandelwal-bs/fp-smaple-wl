@@ -7,6 +7,7 @@ import config from "../../common/config.ts";
 import { Contact, LogEntry } from "../../common/types/chat";
 import type { MessageBody } from "agora-chat";
 import React from "react";
+import { isBlockedUID } from "./blockedUIDs";
 
 interface IncomingCall {
   from: string;
@@ -110,10 +111,10 @@ export function createMessageHandlers({
       addLog("Disconnected");
     },
     onTextMessage: (msg: MessageBody) => {
-      // Ignore messages from recorder (UID 999999999)
+      // Ignore messages from blocked UIDs (Recorder and RTST Agent)
       const fromId = msg.from || "";
-      if (fromId === RECORDER_ID || String(fromId) === RECORDER_ID) {
-        console.log("🚫 Ignoring message from recorder (UID: 999999999)");
+      if (isBlockedUID(fromId)) {
+        console.log("🚫 Ignoring message from blocked UID:", fromId);
         return;
       }
 
@@ -629,12 +630,10 @@ export function createMessageHandlers({
       }
     },
     onCustomMessage: (msg: MessageBody) => {
-      // Ignore messages from recorder (UID 999999999)
+      // Ignore messages from blocked UIDs (Recorder and RTST Agent)
       const fromId = msg.from || "";
-      if (fromId === RECORDER_ID || String(fromId) === RECORDER_ID) {
-        console.log(
-          "🚫 Ignoring custom message from recorder (UID: 999999999)"
-        );
+      if (isBlockedUID(fromId)) {
+        console.log("🚫 Ignoring custom message from blocked UID:", fromId);
         return;
       }
 
@@ -1269,9 +1268,10 @@ export function createMessageHandlers({
     },
     onModifiedMessage: (msg: MessageBody): void => {
       // Handle edited messages
+      // Ignore messages from blocked UIDs (Recorder and RTST Agent)
       const fromId = msg.from || "";
-      if (fromId === RECORDER_ID || String(fromId) === RECORDER_ID) {
-        console.log("🚫 Ignoring edited message from recorder (UID: 999999999)");
+      if (isBlockedUID(fromId)) {
+        console.log("🚫 Ignoring custom message from blocked UID:", fromId);
         return;
       }
 
@@ -1289,16 +1289,16 @@ export function createMessageHandlers({
         (msg as { id?: string; mid?: string }).id ||
         (msg as { id?: string; mid?: string }).mid ||
         `${msg.from}-${msg.time}`;
-      
+
       const messageContent = msg.msg || msg.msgContent || msg.data || "";
-      
+
       // Extract both id and mid from the message
       const msgId = (msg as { id?: string; mid?: string }).id;
       const msgMid = (msg as { id?: string; mid?: string }).mid;
-      
+
       // Use mid if available, otherwise use id
       const messageIdForEditing = msgMid || msgId || messageId;
-      
+
       const logEntry = {
         type: "server",
         serverMsgId: messageIdForEditing,
@@ -1307,7 +1307,7 @@ export function createMessageHandlers({
         timestamp: msg.time ? new Date(msg.time) : new Date(),
         isEdited: true, // Mark as edited
       };
-      
+
       console.log("📝 [onModifiedMessage] Adding edited message to logs:", {
         messageIdForEditing,
         msgId,
@@ -1318,7 +1318,7 @@ export function createMessageHandlers({
         logEntry: logEntry,
         logString: logEntry.log,
       });
-      
+
       // Add as a log entry with serverMsgId and mid to identify it as an edited message
       // Use 'log' property to match the format expected by the message processing logic
       addLog(logEntry);

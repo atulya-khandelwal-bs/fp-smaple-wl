@@ -9,9 +9,10 @@ import {
   usePublish,
   useRemoteUsers,
 } from "agora-rtc-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import config from "../../common/config.ts";
 import { FPVideoCallingProps } from "../../common/types/call";
+import { shouldProceedWithRemoteUsers } from "../../fp-chat/utils/blockedUIDs";
 
 interface FPVideoCallingInnerProps extends FPVideoCallingProps {
   client: IAgoraRTCClient;
@@ -47,21 +48,35 @@ const FPVideoCallingInner = ({
 
   // Generate UID from userId (convert string to number hash)
   const generateUidFromUserId = (userId: string): number => {
-    if (!userId) return 0;
-    let hash = 0;
-    for (let i = 0; i < userId.length; i++) {
-      const char = userId.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32bit integer
+    const num = Number(userId);
+
+    // Check validity and 32-bit signed int range
+    if (Number.isInteger(num) && num >= -2147483648 && num <= 2147483647) {
+      return num | 0; // force 32-bit signed int
     }
-    return Math.abs(hash);
+
+    // fallback random 32-bit signed integer
+    return (Math.random() * 0x7fffffff) | 0;
+    // if (!userId) return 0;
+    // let hash = 0;
+    // for (let i = 0; i < userId.length; i++) {
+    //   const char = userId.charCodeAt(i);
+    //   hash = (hash << 5) - hash + char;
+    //   hash = hash & hash; // Convert to 32bit integer
+    // }
+    // return Math.abs(hash);
   };
 
   const initialUid = userId ? generateUidFromUserId(userId) : 0;
   const [uid, setUid] = useState<string | number>(initialUid);
   const [generatingToken, setGeneratingToken] = useState<boolean>(false);
   const [pendingJoin, setPendingJoin] = useState<boolean>(false);
+  // Track if we've already attempted to join to prevent re-joining on re-renders
   const hasAttemptedJoinRef = useRef<boolean>(false);
+  // Prevent multiple simultaneous token generation requests
+  const isGeneratingTokenRef = useRef<boolean>(false);
+  // Prevent token-ready useEffect from running multiple times
+  const hasJoinedRef = useRef<boolean>(false);
 
   // Media controls state
   const [micOn, setMic] = useState<boolean>(true);
@@ -80,13 +95,24 @@ const FPVideoCallingInner = ({
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const callStartTimeRef = useRef<number | null>(null);
   const remoteUserEverJoinedRef = useRef<boolean>(false);
-
-  // Recorder UID constant - ignore all events for this user
-  const RECORDER_UID = 999999999;
+  // Track recovery attempts to prevent duplicate subscriptions and infinite loops
+  const recoveryAttemptsRef = useRef<
+    Map<string | number, { audio: number; video: number }>
+  >(new Map());
 
   // Agora hooks
-  const { localMicrophoneTrack } = useLocalMicrophoneTrack(micOn);
-  const { localCameraTrack } = useLocalCameraTrack(cameraOn && !isAudioCall);
+  // Always create microphone track (don't recreate when micOn changes)
+  // We'll control mute/unmute via setMuted instead of recreating the track
+  // This prevents the published track from becoming invalid
+  // CRITICAL: Only create tracks when call is active (calling=true)
+  // This prevents tracks from being created after call ends
+  const { localMicrophoneTrack } = useLocalMicrophoneTrack(calling);
+  // Create camera track conditionally based on cameraOn state
+  // When camera is off, track is not created (unpublished) - remote side sees camera is off
+  // When camera is on, track is created and published - remote side sees video
+  const { localCameraTrack } = useLocalCameraTrack(
+    calling && cameraOn && !isAudioCall
+  );
   const allRemoteUsers = useRemoteUsers();
 
   // Helper function to stop MediaStreamTrack (system device)
@@ -97,7 +123,10 @@ const FPVideoCallingInner = ({
     } | null,
     trackName: string
   ): void => {
-    if (!track) return;
+    if (!track) {
+      console.log(`⚠️ No ${trackName} track to stop`);
+      return;
+    }
 
     try {
       // Get the underlying MediaStreamTrack
@@ -111,21 +140,126 @@ const FPVideoCallingInner = ({
       }
 
       // Stop the MediaStreamTrack to turn off system device
-      if (mediaStreamTrack && mediaStreamTrack.readyState !== "ended") {
-        mediaStreamTrack.stop();
-        console.log(`🛑 Stopped ${trackName} MediaStreamTrack (system device)`);
+      if (mediaStreamTrack) {
+        if (mediaStreamTrack.readyState !== "ended") {
+          mediaStreamTrack.stop();
+          console.log(
+            `🛑 Stopped ${trackName} MediaStreamTrack (system device) - ID: ${mediaStreamTrack.id}`
+          );
+        } else {
+          console.log(`⚠️ ${trackName} MediaStreamTrack already ended`);
+        }
+      } else {
+        console.warn(
+          `⚠️ Could not get MediaStreamTrack from ${trackName} track`
+        );
       }
     } catch (error) {
       console.warn(`Error stopping ${trackName} MediaStreamTrack:`, error);
     }
   };
 
-  // Filter out recorder user (UID 999999999) - ignore all events for this user
+  // Comprehensive function to stop ALL video tracks from DOM elements
+  // This ensures we catch any tracks that might not be in the Agora track objects
+  const stopAllVideoTracksFromDOM = (): void => {
+    try {
+      let stoppedCount = 0;
+
+      // Method 1: Get all video elements in the DOM
+      const videoElements = document.querySelectorAll("video");
+      videoElements.forEach((element) => {
+        if (element instanceof HTMLVideoElement) {
+          const stream = element.srcObject;
+          if (stream instanceof MediaStream) {
+            stream.getTracks().forEach((track) => {
+              if (track.kind === "video" && track.readyState !== "ended") {
+                track.stop();
+                stoppedCount++;
+                console.log(
+                  `🛑 Stopped video MediaStreamTrack from DOM element - ID: ${track.id}, label: ${track.label}`
+                );
+              }
+            });
+            // Clear the srcObject to release the stream
+            element.srcObject = null;
+          }
+        }
+      });
+
+      // Method 2: Try to access MediaStreamTrack directly from any active streams
+      // This is a more aggressive approach
+      if (
+        navigator.mediaDevices &&
+        typeof navigator.mediaDevices.getUserMedia === "function"
+      ) {
+        // We can't directly enumerate active streams, but we can check all video elements again
+        // and also check if there are any active tracks in the browser's internal state
+        const allElements = document.querySelectorAll("*");
+        allElements.forEach((element) => {
+          if (
+            element instanceof HTMLVideoElement ||
+            element instanceof HTMLCanvasElement
+          ) {
+            // Check if element has any associated streams
+            if (element instanceof HTMLVideoElement && element.srcObject) {
+              const stream = element.srcObject as MediaStream;
+              if (stream instanceof MediaStream) {
+                stream.getTracks().forEach((track) => {
+                  if (track.kind === "video" && track.readyState === "live") {
+                    track.stop();
+                    stoppedCount++;
+                    console.log(
+                      `🛑 Stopped live video MediaStreamTrack - ID: ${track.id}, label: ${track.label}`
+                    );
+                  }
+                });
+                element.srcObject = null;
+              }
+            }
+          }
+        });
+      }
+
+      // Also try to enumerate devices to check for active video tracks
+      // This is a fallback for tracks that might be active but not attached to elements
+      if (
+        navigator.mediaDevices &&
+        typeof navigator.mediaDevices.enumerateDevices === "function"
+      ) {
+        // Enumerate all media devices to find active video tracks
+        navigator.mediaDevices
+          .enumerateDevices()
+          .then((devices) => {
+            const videoDevices = devices.filter(
+              (device) => device.kind === "videoinput"
+            );
+            if (videoDevices.length > 0) {
+              console.log(
+                `ℹ️ Found ${videoDevices.length} video input device(s)`
+              );
+            }
+          })
+          .catch((err) => {
+            console.warn("Error enumerating devices:", err);
+          });
+      }
+
+      if (stoppedCount > 0) {
+        console.log(
+          `🛑 Stopped ${stoppedCount} video MediaStreamTrack(s) from DOM elements`
+        );
+      }
+    } catch (error) {
+      console.warn("Error stopping all video tracks from DOM:", error);
+    }
+  };
+
+  // Filter out blocked UIDs (Recorder and RTST Agent) - ignore all events for these users
   const remoteUsers = allRemoteUsers.filter((user) => {
-    const userUid =
-      typeof user.uid === "string" ? parseInt(user.uid, 10) : user.uid;
-    return userUid !== RECORDER_UID;
+    return shouldProceedWithRemoteUsers(user.uid);
   });
+
+  console.log("remoteUsers", remoteUsers);
 
   // Log all connected users details
   useEffect(() => {
@@ -189,7 +323,7 @@ const FPVideoCallingInner = ({
     }
   };
 
-  // Load cameras on mount (only for video calls)
+  // Load cameras on mount (only for video calls) - lazy load on first user interaction for PWA
   useEffect(() => {
     if (isAudioCall || !calling) return;
 
@@ -204,8 +338,8 @@ const FPVideoCallingInner = ({
 
   // Flip camera function
   const flipCamera = async (): Promise<void> => {
-    if (!localCameraTrack || cameras.length < 2) {
-      console.warn("Cannot flip camera: insufficient cameras available");
+    if (!localCameraTrack) {
+      console.warn("Cannot flip camera: no camera track available");
       return;
     }
 
@@ -220,12 +354,18 @@ const FPVideoCallingInner = ({
         }
       }
 
+      if (cameras.length < 2) {
+        console.warn("Only one camera available, cannot flip");
+        return;
+      }
+
       // Switch to next camera
       const nextIndex = (currentCameraIndex + 1) % cameras.length;
       const nextCamera = cameras[nextIndex];
 
       console.log("Flipping camera:", {
-        from: cameras[currentCameraIndex]?.label || `Camera ${currentCameraIndex}`,
+        from:
+          cameras[currentCameraIndex]?.label || `Camera ${currentCameraIndex}`,
         to: nextCamera.label || `Camera ${nextIndex}`,
       });
 
@@ -317,6 +457,9 @@ const FPVideoCallingInner = ({
       stopMediaStreamTrack(localCameraTrack, "camera");
       stopMediaStreamTrack(localMicrophoneTrack, "microphone");
 
+      // Comprehensive fallback: Stop ALL video tracks from DOM
+      stopAllVideoTracksFromDOM();
+
       // Also close the Agora tracks to fully release resources
       try {
         if (localCameraTrack && typeof localCameraTrack.close === "function") {
@@ -333,18 +476,36 @@ const FPVideoCallingInner = ({
       } catch (error) {
         console.warn("Error closing tracks:", error);
       }
+
+      // Additional cleanup after a delay
+      setTimeout(() => {
+        stopAllVideoTracksFromDOM();
+      }, 200);
     }
     prevCallingRef.current = calling;
   }, [calling, localCameraTrack, localMicrophoneTrack]);
 
   // Cleanup on component unmount - stop all tracks
+  // Only clean up when component is truly unmounting, not when tracks change
   useEffect(() => {
     return () => {
+      // Only clean up if call has ended (calling is false) or component is unmounting
+      // Don't clean up during remounts when call is still active
+      if (calling) {
+        console.log(
+          "⚠️ Component remounting during active call, preserving tracks"
+        );
+        return;
+      }
+
       console.log(
         "🛑 Component unmounting, stopping system camera and microphone"
       );
       stopMediaStreamTrack(localCameraTrack, "camera");
       stopMediaStreamTrack(localMicrophoneTrack, "microphone");
+
+      // Comprehensive fallback: Stop ALL video tracks from DOM
+      stopAllVideoTracksFromDOM();
 
       // Also close the Agora tracks
       try {
@@ -361,50 +522,182 @@ const FPVideoCallingInner = ({
         console.warn("Error closing tracks on unmount:", error);
       }
     };
-  }, [localCameraTrack, localMicrophoneTrack]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps - only run on true unmount
 
-  // Ignore all remote events for recorder (UID 999999999)
+  // Handle remote user events and subscribe to their tracks
   useEffect(() => {
     if (!_client) return;
 
-    // Helper to check if UID is recorder
-    const isRecorder = (uid: string | number): boolean => {
-      const uidNum = typeof uid === "string" ? parseInt(uid, 10) : uid;
-      return uidNum === RECORDER_UID;
-    };
-
-    // Ignore user-joined event for recorder
+    // Ignore user-joined event for blocked UIDs
     const handleUserJoined = (user: { uid: string | number }): void => {
-      if (isRecorder(user.uid)) {
-        console.log("Ignoring recorder user join event (UID: 999999999)");
+      if (!shouldProceedWithRemoteUsers(user.uid)) {
+        console.log("Ignoring blocked UID join event:", user.uid);
         return;
       }
+      console.log("✅ Remote user joined:", user.uid);
     };
 
-    // Ignore user-left event for recorder
+    // Ignore user-left event for blocked UIDs
     const handleUserLeft = (user: { uid: string | number }): void => {
-      if (isRecorder(user.uid)) {
-        console.log("Ignoring recorder user leave event (UID: 999999999)");
+      if (!shouldProceedWithRemoteUsers(user.uid)) {
+        console.log("Ignoring blocked UID leave event:", user.uid);
         return;
+      }
+      console.log("❌ Remote user left:", user.uid);
+    };
+
+    // Helper function to handle track setup after subscription
+    const handleTrackAfterSubscription = async (
+      uid: string | number,
+      mediaType: "audio" | "video"
+    ): Promise<void> => {
+      // Get the remote user object to verify track availability
+      const remoteUser = _client.remoteUsers.find((u) => u.uid === uid);
+
+      if (mediaType === "audio") {
+        // Verify audio track is available and play it
+        if (remoteUser && remoteUser.audioTrack) {
+          console.log(`✅ Audio track available for user ${uid}`);
+          // Ensure audio track is played
+          try {
+            if (!remoteUser.audioTrack.isPlaying) {
+              await remoteUser.audioTrack.play();
+              console.log(`🔊 Audio track playing for user ${uid}`);
+            }
+            // Set volume based on speaker state
+            if (typeof remoteUser.audioTrack.setVolume === "function") {
+              remoteUser.audioTrack.setVolume(speakerOn ? 100 : 0);
+            }
+          } catch (playError) {
+            console.error(
+              `Error playing audio track for user ${uid}:`,
+              playError
+            );
+          }
+        } else {
+          console.warn(
+            `⚠️ Audio track not found for user ${uid} after subscription`
+          );
+          // Don't retry here - let the recovery logic in useEffect handle it
+        }
+      } else if (mediaType === "video") {
+        // Verify video track is available
+        if (remoteUser && remoteUser.videoTrack) {
+          console.log(
+            `✅ Video track available for user ${uid}, will be played by RemoteUser component`
+          );
+          // Log detailed video track info
+          console.log(`📹 Video track details for user ${uid}:`, {
+            trackId: remoteUser.videoTrack.getTrackId?.() || "unknown",
+            isPlaying: remoteUser.videoTrack.isPlaying,
+            enabled: remoteUser.videoTrack.enabled,
+            muted: remoteUser.videoTrack.muted,
+            trackMediaType: remoteUser.videoTrack.trackMediaType,
+          });
+        } else {
+          console.warn(
+            `⚠️ Video track not found for user ${uid} after subscription`
+          );
+          // Log what we do have
+          if (remoteUser) {
+            console.log(`📹 Remote user ${uid} state:`, {
+              hasVideo: remoteUser.hasVideo,
+              hasVideoTrack: !!remoteUser.videoTrack,
+              hasAudio: remoteUser.hasAudio,
+              hasAudioTrack: !!remoteUser.audioTrack,
+            });
+          } else {
+            console.warn(
+              `⚠️ Remote user ${uid} not found in remoteUsers array`
+            );
+          }
+          // Don't retry here - let the recovery logic in useEffect handle it
+        }
       }
     };
 
-    // Ignore user-published event for recorder (mute/unmute)
-    const handleUserPublished = (user: { uid: string | number }): void => {
-      if (isRecorder(user.uid)) {
-        console.log("Ignoring recorder user published event (UID: 999999999)");
+    // Subscribe to remote user tracks when they publish (critical for seeing/hearing remote users)
+    const handleUserPublished = async (
+      user: { uid: string | number; hasAudio?: boolean; hasVideo?: boolean },
+      mediaType: "audio" | "video"
+    ): Promise<void> => {
+      if (!shouldProceedWithRemoteUsers(user.uid)) {
+        console.log("Ignoring blocked UID published event:", user.uid);
         return;
       }
+
+      console.log(`📡 Remote user published ${mediaType}:`, user.uid, {
+        hasAudio: user.hasAudio,
+        hasVideo: user.hasVideo,
+      });
+
+      // For video tracks, be more aggressive - try subscribing immediately
+      // The user-published event means the track is available, even if user isn't in remoteUsers yet
+      const subscribeWithRetry = async (
+        uid: string | number,
+        type: "audio" | "video",
+        retryCount = 0,
+        maxRetries = 3
+      ): Promise<void> => {
+        try {
+          await _client.subscribe(uid, type);
+          console.log(`✅ Successfully subscribed to ${type} for user:`, uid);
+
+          // Wait a bit for the track to be available after subscription
+          await new Promise((resolve) => setTimeout(resolve, 200));
+
+          // Handle track setup
+          await handleTrackAfterSubscription(uid, type);
+        } catch (error: unknown) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const isInvalidUserError =
+            errorMessage.includes("INVALID_REMOTE_USER") ||
+            errorMessage.includes("user is not in the channel");
+
+          if (isInvalidUserError && retryCount < maxRetries) {
+            // User might not be fully in channel yet, retry after a delay
+            console.warn(
+              `⚠️ User ${uid} not in channel yet for ${type}, retrying (${
+                retryCount + 1
+              }/${maxRetries})...`
+            );
+            setTimeout(
+              () => subscribeWithRetry(uid, type, retryCount + 1, maxRetries),
+              500 * (retryCount + 1) // Exponential backoff
+            );
+          } else if (isInvalidUserError) {
+            console.warn(
+              `⚠️ User ${uid} is not in channel after ${maxRetries} attempts, cannot subscribe to ${type}`
+            );
+          } else {
+            console.error(
+              `❌ Error subscribing to ${type} for user ${uid}:`,
+              error
+            );
+            // For non-INVALID_REMOTE_USER errors, also retry
+            if (retryCount < maxRetries) {
+              setTimeout(
+                () => subscribeWithRetry(uid, type, retryCount + 1, maxRetries),
+                500 * (retryCount + 1)
+              );
+            }
+          }
+        }
+      };
+
+      // Start subscription with retry logic
+      subscribeWithRetry(user.uid, mediaType);
     };
 
-    // Ignore user-unpublished event for recorder (mute/unmute)
+    // Handle user-unpublished event for blocked UIDs (mute/unmute)
     const handleUserUnpublished = (user: { uid: string | number }): void => {
-      if (isRecorder(user.uid)) {
-        console.log(
-          "Ignoring recorder user unpublished event (UID: 999999999)"
-        );
+      if (!shouldProceedWithRemoteUsers(user.uid)) {
+        console.log("Ignoring blocked UID unpublished event:", user.uid);
         return;
       }
+      console.log("🔇 Remote user unpublished:", user.uid);
     };
 
     // Add event listeners
@@ -422,13 +715,531 @@ const FPVideoCallingInner = ({
     };
   }, [_client]);
 
-  // Track if remote user ever joined (excluding recorder)
+  // Aggressively subscribe to all published tracks when remote users join
+  // This ensures we don't miss any video tracks
   useEffect(() => {
-    if (remoteUsers.length > 0) {
-      remoteUserEverJoinedRef.current = true;
-      console.log("Remote user joined. Both users are connected.");
-    }
-  }, [remoteUsers.length]);
+    if (!isConnected || !calling || remoteUsers.length === 0) return;
+
+    remoteUsers.forEach(async (user) => {
+      // Check if user has published video but we don't have the track
+      if (user.hasVideo && !user.videoTrack) {
+        console.log(
+          `🔄 User ${user.uid} has published video but track missing, subscribing...`
+        );
+        try {
+          await _client.subscribe(user.uid, "video");
+          console.log(`✅ Subscribed to video for user ${user.uid}`);
+          // Wait a bit for track to be available
+          setTimeout(() => {
+            const updatedUser = _client.remoteUsers.find(
+              (u) => u.uid === user.uid
+            );
+            if (updatedUser?.videoTrack) {
+              console.log(`✅ Video track now available for user ${user.uid}`);
+            } else {
+              console.warn(
+                `⚠️ Video track still not available for user ${user.uid} after subscription`
+              );
+            }
+          }, 300);
+        } catch (error: unknown) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const isInvalidUserError =
+            errorMessage.includes("INVALID_REMOTE_USER") ||
+            errorMessage.includes("user is not in the channel");
+
+          if (!isInvalidUserError) {
+            console.error(
+              `❌ Error subscribing to video for user ${user.uid}:`,
+              error
+            );
+          }
+        }
+      } else if (!user.hasVideo && !user.videoTrack && !isAudioCall) {
+        // Fallback: Try subscribing to video even if hasVideo is false
+        // This catches cases where:
+        // 1. The hasVideo flag is incorrect/stale
+        // 2. Video was just published but flag hasn't updated yet
+        // 3. The user-published event was missed
+        // Only try once per user to avoid spam
+        if (!videoFallbackAttemptedRef.current.has(user.uid)) {
+          console.log(
+            `🔄 Fallback: User ${user.uid} shows hasVideo=false but trying to subscribe to video anyway (might be flag issue)...`
+          );
+          videoFallbackAttemptedRef.current.add(user.uid);
+          try {
+            await _client.subscribe(user.uid, "video");
+            console.log(
+              `✅ Fallback: Successfully subscribed to video for user ${user.uid}`
+            );
+            // Wait a bit and check if track is now available
+            setTimeout(() => {
+              const updatedUser = _client.remoteUsers.find(
+                (u) => u.uid === user.uid
+              );
+              if (updatedUser?.videoTrack) {
+                console.log(
+                  `✅ Fallback: Video track now available for user ${user.uid} - flag was incorrect!`
+                );
+                // Reset hasVideo flag tracking since we found the track
+                videoFallbackAttemptedRef.current.delete(user.uid);
+              } else {
+                console.log(
+                  `ℹ️ Fallback: No video track available for user ${user.uid} (user likely has camera off)`
+                );
+              }
+            }, 300);
+          } catch (error: unknown) {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            const isInvalidUserError =
+              errorMessage.includes("INVALID_REMOTE_USER") ||
+              errorMessage.includes("user is not in the channel");
+
+            if (isInvalidUserError) {
+              console.log(
+                `ℹ️ Fallback: User ${user.uid} has not published video (camera is off) - this is expected`
+              );
+            } else {
+              console.warn(
+                `⚠️ Fallback: Error subscribing to video for user ${user.uid}:`,
+                error
+              );
+            }
+          }
+        }
+      }
+
+      // Check if user has published audio but we don't have the track
+      if (user.hasAudio && !user.audioTrack) {
+        console.log(
+          `🔄 User ${user.uid} has published audio but track missing, subscribing...`
+        );
+        try {
+          await _client.subscribe(user.uid, "audio");
+          const updatedUser = _client.remoteUsers.find(
+            (u) => u.uid === user.uid
+          );
+          if (updatedUser?.audioTrack) {
+            if (!updatedUser.audioTrack.isPlaying) {
+              await updatedUser.audioTrack.play();
+            }
+            if (typeof updatedUser.audioTrack.setVolume === "function") {
+              updatedUser.audioTrack.setVolume(speakerOn ? 100 : 0);
+            }
+            console.log(`✅ Subscribed to audio for user ${user.uid}`);
+          }
+        } catch (error: unknown) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const isInvalidUserError =
+            errorMessage.includes("INVALID_REMOTE_USER") ||
+            errorMessage.includes("user is not in the channel");
+
+          if (!isInvalidUserError) {
+            console.error(
+              `❌ Error subscribing to audio for user ${user.uid}:`,
+              error
+            );
+          }
+        }
+      }
+    });
+  }, [remoteUsers, isConnected, calling, _client, speakerOn]);
+
+  // Periodic check to ensure all published video tracks are subscribed
+  // This catches cases where user-published events were missed
+  useEffect(() => {
+    if (!isConnected || !calling) return;
+
+    const checkInterval = setInterval(() => {
+      if (remoteUsers.length === 0) return;
+
+      remoteUsers.forEach(async (user) => {
+        // If user has published video but we don't have the track, subscribe
+        if (user.hasVideo && !user.videoTrack) {
+          console.log(
+            `🔄 Periodic check: User ${user.uid} has video but track missing, subscribing...`
+          );
+          try {
+            await _client.subscribe(user.uid, "video");
+            console.log(
+              `✅ Periodic check: Subscribed to video for user ${user.uid}`
+            );
+          } catch (error: unknown) {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            const isInvalidUserError =
+              errorMessage.includes("INVALID_REMOTE_USER") ||
+              errorMessage.includes("user is not in the channel");
+
+            if (!isInvalidUserError) {
+              console.warn(
+                `⚠️ Periodic check: Error subscribing to video for user ${user.uid}:`,
+                error
+              );
+            }
+          }
+        } else if (!user.hasVideo && !user.videoTrack && !isAudioCall) {
+          // Fallback: Try subscribing even if hasVideo is false (only once per user)
+          // This helps catch cases where the flag is incorrect
+          if (!videoFallbackAttemptedRef.current.has(user.uid)) {
+            console.log(
+              `🔄 Periodic check (fallback): User ${user.uid} shows hasVideo=false, trying subscription...`
+            );
+            videoFallbackAttemptedRef.current.add(user.uid);
+            try {
+              await _client.subscribe(user.uid, "video");
+              setTimeout(() => {
+                const updatedUser = _client.remoteUsers.find(
+                  (u) => u.uid === user.uid
+                );
+                if (updatedUser?.videoTrack) {
+                  console.log(
+                    `✅ Periodic check (fallback): Video track found for user ${user.uid} - flag was incorrect!`
+                  );
+                  videoFallbackAttemptedRef.current.delete(user.uid);
+                }
+              }, 300);
+            } catch (error: unknown) {
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
+              const isInvalidUserError =
+                errorMessage.includes("INVALID_REMOTE_USER") ||
+                errorMessage.includes("user is not in the channel");
+
+              if (isInvalidUserError) {
+                // User hasn't published video, this is expected
+                console.log(
+                  `ℹ️ Periodic check (fallback): User ${user.uid} has not published video (camera off)`
+                );
+              }
+            }
+          }
+        }
+      });
+    }, 3000); // Check every 3 seconds
+
+    return () => clearInterval(checkInterval);
+  }, [isConnected, calling, remoteUsers, _client, isAudioCall]);
+
+  // Track if remote user ever joined (excluding recorder) and log video track status
+  // Also control remote audio tracks based on speakerOn state
+  // CRITICAL: Verify and ensure tracks are available even if hasAudio/hasVideo flags are false
+  useEffect(() => {
+    // Only run recovery logic if we're connected and in a call
+    if (!isConnected || !calling || remoteUsers.length === 0) return;
+
+    remoteUserEverJoinedRef.current = true;
+    console.log("Remote user joined. Both users are connected.");
+
+    // Log remote user video track status for debugging
+    remoteUsers.forEach((user) => {
+      // Check actual track presence, not just hasAudio/hasVideo flags
+      const hasActualAudioTrack = !!user.audioTrack;
+      const hasActualVideoTrack = !!user.videoTrack;
+
+      console.log(`👤 Remote User ${user.uid}:`, {
+        hasVideo: user.hasVideo,
+        hasVideoTrack: hasActualVideoTrack,
+        videoTrackPlaying: user.videoTrack?.isPlaying,
+        videoTrackState: user.videoTrack?.getStats
+          ? "available"
+          : "not available",
+        hasAudio: user.hasAudio,
+        hasAudioTrack: hasActualAudioTrack,
+        audioTrackPlaying: user.audioTrack?.isPlaying,
+        // Log discrepancy if flags don't match actual tracks
+        audioTrackMismatch: user.hasAudio !== hasActualAudioTrack,
+        videoTrackMismatch: user.hasVideo !== hasActualVideoTrack,
+      });
+
+      // Helper function to verify user is in channel before subscribing
+      const isUserInChannel = (uid: string | number): boolean => {
+        const userInChannel = _client.remoteUsers.find((u) => u.uid === uid);
+        return !!userInChannel;
+      };
+
+      // Helper function to check if we should attempt recovery
+      const shouldAttemptRecovery = (
+        uid: string | number,
+        mediaType: "audio" | "video"
+      ): boolean => {
+        // Don't attempt if user is not in channel
+        if (!isUserInChannel(uid)) {
+          console.warn(
+            `⚠️ User ${uid} is not in channel, skipping ${mediaType} recovery`
+          );
+          return false;
+        }
+
+        // Limit recovery attempts to prevent infinite loops
+        const attempts = recoveryAttemptsRef.current.get(uid) || {
+          audio: 0,
+          video: 0,
+        };
+        const maxAttempts = 2; // Only try twice per user per media type
+
+        if (mediaType === "audio" && attempts.audio >= maxAttempts) {
+          console.warn(
+            `⚠️ Max audio recovery attempts reached for user ${uid}`
+          );
+          return false;
+        }
+        if (mediaType === "video" && attempts.video >= maxAttempts) {
+          console.warn(
+            `⚠️ Max video recovery attempts reached for user ${uid}`
+          );
+          return false;
+        }
+
+        return true;
+      };
+
+      // If audio track is missing but hasAudio is true, try to subscribe again
+      if (!hasActualAudioTrack && user.hasAudio) {
+        if (shouldAttemptRecovery(user.uid, "audio")) {
+          console.warn(
+            `⚠️ Audio track missing for user ${user.uid} but hasAudio=true, attempting to subscribe...`
+          );
+
+          // Increment attempt counter
+          const attempts = recoveryAttemptsRef.current.get(user.uid) || {
+            audio: 0,
+            video: 0,
+          };
+          recoveryAttemptsRef.current.set(user.uid, {
+            ...attempts,
+            audio: attempts.audio + 1,
+          });
+
+          setTimeout(async () => {
+            // Double-check user is still in channel before subscribing
+            if (!isUserInChannel(user.uid)) {
+              console.warn(
+                `⚠️ User ${user.uid} no longer in channel, aborting audio recovery`
+              );
+              return;
+            }
+
+            try {
+              await _client.subscribe(user.uid, "audio");
+              const updatedUser = _client.remoteUsers.find(
+                (u) => u.uid === user.uid
+              );
+              if (updatedUser?.audioTrack) {
+                if (!updatedUser.audioTrack.isPlaying) {
+                  await updatedUser.audioTrack.play();
+                }
+                if (typeof updatedUser.audioTrack.setVolume === "function") {
+                  updatedUser.audioTrack.setVolume(speakerOn ? 100 : 0);
+                }
+                console.log(`✅ Audio track recovered for user ${user.uid}`);
+                // Reset attempt counter on success
+                recoveryAttemptsRef.current.set(user.uid, {
+                  ...attempts,
+                  audio: 0,
+                });
+              }
+            } catch (error: unknown) {
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
+              const isInvalidUserError =
+                errorMessage.includes("INVALID_REMOTE_USER") ||
+                errorMessage.includes("user is not in the channel");
+
+              if (isInvalidUserError) {
+                console.warn(
+                  `⚠️ User ${user.uid} is not in channel, cannot recover audio track`
+                );
+                // Don't retry if user is not in channel
+                recoveryAttemptsRef.current.set(user.uid, {
+                  ...attempts,
+                  audio: 999,
+                });
+              } else {
+                console.error(
+                  `❌ Error recovering audio track for user ${user.uid}:`,
+                  error
+                );
+              }
+            }
+          }, 500); // Increased delay to allow channel state to stabilize
+        }
+      }
+
+      // If video track is missing but hasVideo is true, try to subscribe again
+      if (!hasActualVideoTrack && user.hasVideo) {
+        if (shouldAttemptRecovery(user.uid, "video")) {
+          console.warn(
+            `⚠️ Video track missing for user ${user.uid} but hasVideo=true, attempting to subscribe...`
+          );
+
+          // Increment attempt counter
+          const attempts = recoveryAttemptsRef.current.get(user.uid) || {
+            audio: 0,
+            video: 0,
+          };
+          recoveryAttemptsRef.current.set(user.uid, {
+            ...attempts,
+            video: attempts.video + 1,
+          });
+
+          setTimeout(async () => {
+            // Double-check user is still in channel before subscribing
+            if (!isUserInChannel(user.uid)) {
+              console.warn(
+                `⚠️ User ${user.uid} no longer in channel, aborting video recovery`
+              );
+              return;
+            }
+
+            try {
+              await _client.subscribe(user.uid, "video");
+              const updatedUser = _client.remoteUsers.find(
+                (u) => u.uid === user.uid
+              );
+              if (updatedUser?.videoTrack) {
+                console.log(`✅ Video track recovered for user ${user.uid}`);
+                // Reset attempt counter on success
+                recoveryAttemptsRef.current.set(user.uid, {
+                  ...attempts,
+                  video: 0,
+                });
+              }
+            } catch (error: unknown) {
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
+              const isInvalidUserError =
+                errorMessage.includes("INVALID_REMOTE_USER") ||
+                errorMessage.includes("user is not in the channel");
+
+              if (isInvalidUserError) {
+                console.warn(
+                  `⚠️ User ${user.uid} is not in channel, cannot recover video track`
+                );
+                // Don't retry if user is not in channel
+                recoveryAttemptsRef.current.set(user.uid, {
+                  ...attempts,
+                  video: 999,
+                });
+              } else {
+                console.error(
+                  `❌ Error recovering video track for user ${user.uid}:`,
+                  error
+                );
+              }
+            }
+          }, 500); // Increased delay to allow channel state to stabilize
+        }
+      }
+
+      // Control remote audio track based on speakerOn state
+      if (user.audioTrack) {
+        try {
+          // Set volume to 0 when speaker is off, 100 when speaker is on
+          if (typeof user.audioTrack.setVolume === "function") {
+            user.audioTrack.setVolume(speakerOn ? 100 : 0);
+            console.log(
+              `🔊 Remote audio track volume set to ${
+                speakerOn ? 100 : 0
+              } for user ${user.uid}`
+            );
+          }
+          // Also control playback - stop playing when speaker is off
+          if (speakerOn) {
+            if (!user.audioTrack.isPlaying) {
+              user.audioTrack.play();
+              console.log(`🔊 Remote audio track playing for user ${user.uid}`);
+            }
+          } else {
+            if (user.audioTrack.isPlaying) {
+              user.audioTrack.stop();
+              console.log(`🔇 Remote audio track stopped for user ${user.uid}`);
+            }
+          }
+        } catch (error) {
+          console.error(
+            `Error controlling remote audio track for user ${user.uid}:`,
+            error
+          );
+        }
+      } else if (user.hasAudio) {
+        // Track should exist but doesn't - try to subscribe (only if user is in channel)
+        if (shouldAttemptRecovery(user.uid, "audio")) {
+          console.warn(
+            `⚠️ Audio track missing for user ${user.uid} but hasAudio=true, subscribing...`
+          );
+
+          // Increment attempt counter
+          const attempts = recoveryAttemptsRef.current.get(user.uid) || {
+            audio: 0,
+            video: 0,
+          };
+          recoveryAttemptsRef.current.set(user.uid, {
+            ...attempts,
+            audio: attempts.audio + 1,
+          });
+
+          setTimeout(async () => {
+            // Double-check user is still in channel before subscribing
+            if (!isUserInChannel(user.uid)) {
+              console.warn(
+                `⚠️ User ${user.uid} no longer in channel, aborting audio subscription`
+              );
+              return;
+            }
+
+            try {
+              await _client.subscribe(user.uid, "audio");
+              const updatedUser = _client.remoteUsers.find(
+                (u) => u.uid === user.uid
+              );
+              if (updatedUser?.audioTrack) {
+                if (!updatedUser.audioTrack.isPlaying) {
+                  await updatedUser.audioTrack.play();
+                }
+                if (typeof updatedUser.audioTrack.setVolume === "function") {
+                  updatedUser.audioTrack.setVolume(speakerOn ? 100 : 0);
+                }
+                console.log(
+                  `✅ Audio track subscribed and playing for user ${user.uid}`
+                );
+                // Reset attempt counter on success
+                recoveryAttemptsRef.current.set(user.uid, {
+                  ...attempts,
+                  audio: 0,
+                });
+              }
+            } catch (error: unknown) {
+              const errorMessage =
+                error instanceof Error ? error.message : String(error);
+              const isInvalidUserError =
+                errorMessage.includes("INVALID_REMOTE_USER") ||
+                errorMessage.includes("user is not in the channel");
+
+              if (isInvalidUserError) {
+                console.warn(
+                  `⚠️ User ${user.uid} is not in channel, cannot subscribe to audio`
+                );
+                // Don't retry if user is not in channel
+                recoveryAttemptsRef.current.set(user.uid, {
+                  ...attempts,
+                  audio: 999,
+                });
+              } else {
+                console.error(
+                  `❌ Error subscribing to audio for user ${user.uid}:`,
+                  error
+                );
+              }
+            }
+          }, 500); // Increased delay to allow channel state to stabilize
+        }
+      }
+    });
+  }, [remoteUsers, speakerOn, _client, isConnected, calling]);
 
   // Reset mainUserId when number of users changes
   useEffect(() => {
@@ -441,7 +1252,6 @@ const FPVideoCallingInner = ({
       }
     }
   }, [remoteUsers.length, mainUserId, remoteUsers]);
-
 
   // Auto-hide controls on mobile
   useEffect(() => {
@@ -497,15 +1307,301 @@ const FPVideoCallingInner = ({
     },
     calling
   );
-  usePublish(
-    isAudioCall
-      ? [localMicrophoneTrack]
-      : [localMicrophoneTrack, localCameraTrack]
-  );
+  // Only publish tracks that are not null and the call is active
+  // Use useMemo to stabilize the array reference and prevent unnecessary unpublish/republish cycles
+  // CRITICAL: Only publish when call is active AND connected to prevent track from being stopped
+  const tracksToPublish = useMemo(() => {
+    // Don't publish if call is not active or not connected - this prevents tracks from being stopped
+    if (!calling || !isConnected) {
+      return [];
+    }
+
+    if (isAudioCall) {
+      return localMicrophoneTrack ? [localMicrophoneTrack] : [];
+    }
+    return [localMicrophoneTrack, localCameraTrack].filter(
+      (track) => track !== null
+    );
+  }, [
+    isAudioCall,
+    localMicrophoneTrack,
+    localCameraTrack,
+    calling,
+    isConnected,
+  ]);
+  usePublish(tracksToPublish);
+
+  // Ensure microphone track is enabled and unmuted when published (critical for remote users to hear audio)
+  useEffect(() => {
+    if (!localMicrophoneTrack || !isConnected || !calling) return;
+
+    let isMounted = true;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const configureMicrophoneTrack = (): void => {
+      if (!isMounted || !localMicrophoneTrack) return;
+
+      try {
+        // Get underlying MediaStreamTrack to check its state
+        let mediaStreamTrack: MediaStreamTrack | null = null;
+        if (typeof localMicrophoneTrack.getMediaStreamTrack === "function") {
+          mediaStreamTrack = localMicrophoneTrack.getMediaStreamTrack();
+        }
+
+        // Check if MediaStreamTrack is still active - if not, don't try to configure
+        if (mediaStreamTrack && mediaStreamTrack.readyState === "ended") {
+          console.warn("⚠️ MediaStreamTrack is ended, cannot configure");
+          return;
+        }
+
+        // Ensure track is enabled based on micOn state
+        if (typeof localMicrophoneTrack.setEnabled === "function") {
+          localMicrophoneTrack.setEnabled(micOn);
+          console.log(`🎤 Microphone track ${micOn ? "enabled" : "disabled"}`);
+        }
+
+        // Ensure track is NOT muted when micOn is true (setMuted(false) means unmuted)
+        // This is critical - muted tracks will cause AgoraAudioRemoteStateFailed
+        if (typeof localMicrophoneTrack.setMuted === "function") {
+          localMicrophoneTrack.setMuted(!micOn);
+          console.log(`🎤 Microphone track ${micOn ? "unmuted" : "muted"}`);
+        }
+
+        // Set volume to maximum when mic is on
+        if (typeof localMicrophoneTrack.setVolume === "function" && micOn) {
+          localMicrophoneTrack.setVolume(100);
+          console.log("🎤 Microphone track volume set to 100");
+        }
+
+        // CRITICAL: Ensure the underlying MediaStreamTrack is also enabled and not muted
+        // The Agora track can be unmuted while the MediaStreamTrack is muted, which prevents audio transmission
+        if (mediaStreamTrack && micOn) {
+          if (mediaStreamTrack.enabled === false) {
+            mediaStreamTrack.enabled = true;
+            console.log("🎤 MediaStreamTrack enabled");
+          }
+          if (mediaStreamTrack.muted === true) {
+            // Note: MediaStreamTrack.muted is read-only, but we can check it
+            // If it's muted, it might be due to browser/system settings
+            console.warn(
+              "⚠️ MediaStreamTrack is muted (may be due to browser/system settings)"
+            );
+          }
+        }
+
+        // Verify the track state after configuration
+        const trackState = {
+          enabled: localMicrophoneTrack.enabled,
+          muted: localMicrophoneTrack.muted,
+          hasTrack: !!localMicrophoneTrack,
+          micOn: micOn,
+          trackId: localMicrophoneTrack.getTrackId?.() || "unknown",
+          mediaStreamTrackReadyState: mediaStreamTrack?.readyState || "N/A",
+          mediaStreamTrackEnabled: mediaStreamTrack?.enabled ?? "N/A",
+          mediaStreamTrackMuted: mediaStreamTrack?.muted ?? "N/A",
+          // Check if track has constraints (indicates it's actually capturing)
+          mediaStreamTrackConstraints:
+            mediaStreamTrack?.getConstraints?.() || "N/A",
+          // Check track settings (shows actual state)
+          mediaStreamTrackSettings: mediaStreamTrack?.getSettings?.() || "N/A",
+        };
+
+        console.log("🎤 Microphone track state:", trackState);
+
+        // CRITICAL: Verify the track is actually ready to send audio
+        if (micOn && mediaStreamTrack) {
+          if (mediaStreamTrack.readyState !== "live") {
+            console.error(
+              "❌ MediaStreamTrack is not live! State:",
+              mediaStreamTrack.readyState
+            );
+          }
+          if (mediaStreamTrack.enabled === false) {
+            console.error("❌ MediaStreamTrack is disabled!");
+          }
+          if (mediaStreamTrack.muted === true) {
+            console.error(
+              "❌ MediaStreamTrack is muted at browser/system level!"
+            );
+          }
+        }
+
+        // If track is still muted when it should be unmuted, retry
+        if (micOn && localMicrophoneTrack.muted && retryCount < maxRetries) {
+          retryCount++;
+          console.warn(
+            `⚠️ Track still muted, retrying (${retryCount}/${maxRetries})...`
+          );
+          setTimeout(configureMicrophoneTrack, 200);
+        } else if (micOn && localMicrophoneTrack.muted) {
+          console.error("❌ Failed to unmute microphone track after retries");
+        }
+      } catch (error) {
+        console.error("❌ Error setting microphone track state:", error);
+        if (retryCount < maxRetries) {
+          retryCount++;
+          setTimeout(configureMicrophoneTrack, 200);
+        }
+      }
+    };
+
+    // Initial configuration with small delay to ensure track is ready
+    const timeoutId1 = setTimeout(configureMicrophoneTrack, 50);
+    // Also configure after a longer delay to catch any late initialization
+    const timeoutId2 = setTimeout(configureMicrophoneTrack, 200);
+
+    // Listen for track state changes
+    let trackStateCheckInterval: NodeJS.Timeout | null = null;
+    if (isConnected && calling) {
+      trackStateCheckInterval = setInterval(() => {
+        if (localMicrophoneTrack && micOn) {
+          // Periodically check and fix track state
+          if (localMicrophoneTrack.muted) {
+            console.warn("⚠️ Microphone track became muted, fixing...");
+            if (typeof localMicrophoneTrack.setMuted === "function") {
+              localMicrophoneTrack.setMuted(false);
+            }
+          }
+          if (!localMicrophoneTrack.enabled) {
+            console.warn("⚠️ Microphone track became disabled, fixing...");
+            if (typeof localMicrophoneTrack.setEnabled === "function") {
+              localMicrophoneTrack.setEnabled(true);
+            }
+          }
+        }
+      }, 2000); // Check every 2 seconds
+    }
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
+      if (trackStateCheckInterval) {
+        clearInterval(trackStateCheckInterval);
+      }
+    };
+  }, [localMicrophoneTrack, isConnected, calling, micOn]);
+
+  // Ensure camera track is enabled/disabled based on cameraOn state
+  // When camera is off: disable the track (remote sees camera is off) and stop MediaStreamTrack (system camera off)
+  // When camera is on: enable the track (remote sees video) and ensure MediaStreamTrack is running
+  useEffect(() => {
+    if (!localCameraTrack || !isConnected || !calling || isAudioCall) {
+      // If camera is off and we have a track, make sure it's disabled
+      if (localCameraTrack && !cameraOn && !isAudioCall) {
+        try {
+          if (typeof localCameraTrack.setEnabled === "function") {
+            localCameraTrack.setEnabled(false);
+            console.log("📹 Camera track disabled (camera off)");
+          }
+        } catch (error) {
+          console.error("Error disabling camera track:", error);
+        }
+      }
+      return;
+    }
+
+    let isMounted = true;
+    let retryCount = 0;
+    const maxRetries = 3;
+
+    const configureCameraTrack = (): void => {
+      if (!isMounted || !localCameraTrack) return;
+
+      try {
+        // Get underlying MediaStreamTrack to control system camera
+        let mediaStreamTrack: MediaStreamTrack | null = null;
+        if (typeof localCameraTrack.getMediaStreamTrack === "function") {
+          mediaStreamTrack = localCameraTrack.getMediaStreamTrack();
+        } else if (
+          "track" in localCameraTrack &&
+          localCameraTrack.track instanceof MediaStreamTrack
+        ) {
+          mediaStreamTrack = localCameraTrack.track as MediaStreamTrack;
+        }
+
+        // Control track enabled state (this affects what remote side sees)
+        if (typeof localCameraTrack.setEnabled === "function") {
+          localCameraTrack.setEnabled(cameraOn);
+          console.log(`📹 Camera track ${cameraOn ? "enabled" : "disabled"}`);
+        }
+
+        // Control underlying MediaStreamTrack to turn system camera on/off
+        if (mediaStreamTrack) {
+          if (cameraOn) {
+            // Camera on: ensure MediaStreamTrack is enabled and running
+            if (mediaStreamTrack.enabled === false) {
+              mediaStreamTrack.enabled = true;
+              console.log("📹 MediaStreamTrack enabled (system camera on)");
+            }
+            // If track was stopped, we can't restart it - track will need to be recreated
+            // But since we always create the track, this shouldn't happen
+          } else {
+            // Camera off: disable MediaStreamTrack (stops capturing frames)
+            // Note: Setting enabled=false stops capturing but the system camera indicator may stay on
+            // This is a browser limitation - we can't fully turn off the camera while keeping the track
+            if (mediaStreamTrack.enabled === true) {
+              mediaStreamTrack.enabled = false;
+              console.log("📹 MediaStreamTrack disabled (stops capturing)");
+            }
+            // Also try to stop the track to turn off system camera completely
+            // This will make the track unusable, but when camera is turned back on, the track will be recreated
+            if (mediaStreamTrack.readyState === "live") {
+              try {
+                mediaStreamTrack.stop();
+                console.log("📹 MediaStreamTrack stopped (system camera off)");
+              } catch (error) {
+                console.warn("Could not stop MediaStreamTrack:", error);
+              }
+            }
+          }
+        }
+
+        // Verify the track state
+        const trackState = {
+          enabled: localCameraTrack.enabled,
+          hasTrack: !!localCameraTrack,
+          cameraOn: cameraOn,
+          trackId: localCameraTrack.getTrackId?.() || "unknown",
+          mediaStreamTrackReadyState: mediaStreamTrack?.readyState || "N/A",
+          mediaStreamTrackEnabled: mediaStreamTrack?.enabled ?? "N/A",
+        };
+
+        console.log("📹 Camera track state:", trackState);
+
+        // If track is not in correct state, retry
+        if (cameraOn && !localCameraTrack.enabled && retryCount < maxRetries) {
+          retryCount++;
+          console.warn(
+            `⚠️ Camera track not enabled, retrying (${retryCount}/${maxRetries})...`
+          );
+          setTimeout(configureCameraTrack, 200);
+        } else if (cameraOn && !localCameraTrack.enabled) {
+          console.error("❌ Failed to enable camera track after retries");
+        }
+      } catch (error) {
+        console.error("❌ Error setting camera track state:", error);
+        if (retryCount < maxRetries) {
+          retryCount++;
+          setTimeout(configureCameraTrack, 200);
+        }
+      }
+    };
+
+    // Initial configuration with small delay to ensure track is ready
+    const timeoutId1 = setTimeout(configureCameraTrack, 50);
+    // Also configure after a longer delay to catch any late initialization
+    const timeoutId2 = setTimeout(configureCameraTrack, 200);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
+    };
+  }, [localCameraTrack, isConnected, calling, cameraOn, isAudioCall]);
 
   // Generate token from API
-  // Prevent multiple simultaneous token generation requests
-  const isGeneratingTokenRef = useRef<boolean>(false);
   const generateToken = async (): Promise<string | null> => {
     if (!channel || typeof uid !== "number") {
       if (!isStandalone) {
@@ -515,13 +1611,13 @@ const FPVideoCallingInner = ({
       }
       return null;
     }
-    
+
     // Prevent multiple simultaneous token generation requests
     if (isGeneratingTokenRef.current) {
       console.log("Token generation already in progress, skipping...");
       return null;
     }
-    
+
     isGeneratingTokenRef.current = true;
     setGeneratingToken(true);
     try {
@@ -550,21 +1646,22 @@ const FPVideoCallingInner = ({
           "Token generated successfully:",
           newToken.substring(0, 50) + "..."
         );
+        isGeneratingTokenRef.current = false;
+        setGeneratingToken(false);
         return newToken;
       } else {
         throw new Error("Token not found in response");
       }
     } catch (error) {
       console.error("Error generating token:", error);
+      isGeneratingTokenRef.current = false;
+      setGeneratingToken(false);
       alert(
         `Failed to generate token: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
       return null;
-    } finally {
-      setGeneratingToken(false);
-      isGeneratingTokenRef.current = false;
     }
   };
 
@@ -588,7 +1685,9 @@ const FPVideoCallingInner = ({
   // Auto-join when props are provided - only run once to prevent re-joining on re-renders
   useEffect(() => {
     // Prevent re-running if we've already attempted to join or if conditions aren't met
+    // CRITICAL: Check hasJoinedRef first to prevent re-running after successful join
     if (
+      hasJoinedRef.current ||
       hasAttemptedJoinRef.current ||
       isStandalone ||
       !propChannel ||
@@ -597,6 +1696,7 @@ const FPVideoCallingInner = ({
       token ||
       pendingJoin ||
       generatingToken ||
+      isGeneratingTokenRef.current ||
       typeof uid !== "number" ||
       uid <= 0
     ) {
@@ -623,12 +1723,30 @@ const FPVideoCallingInner = ({
     };
     autoJoin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStandalone, propChannel, userId, uid, calling, token, pendingJoin, generatingToken]);
+  }, [
+    isStandalone,
+    propChannel,
+    userId,
+    uid,
+    calling,
+    token,
+    pendingJoin,
+    generatingToken,
+  ]);
 
-  // Handle join when token is ready - use ref to prevent multiple triggers
-  const hasJoinedRef = useRef<boolean>(false);
+  // Handle join when token is ready
   useEffect(() => {
-    if (pendingJoin && token && !hasJoinedRef.current && !calling) {
+    // Only join if we have all required conditions and haven't already joined
+    if (
+      pendingJoin &&
+      token &&
+      !hasJoinedRef.current &&
+      !calling &&
+      !isGeneratingTokenRef.current &&
+      appId &&
+      channel &&
+      typeof uid === "number"
+    ) {
       console.log(
         "Token ready, joining call with token:",
         token.substring(0, 50) + "..."
@@ -636,35 +1754,41 @@ const FPVideoCallingInner = ({
       console.log("App ID:", appId);
       console.log("Channel:", channel);
       console.log("UID:", uid);
-      hasJoinedRef.current = true;
+      hasJoinedRef.current = true; // Set ref to prevent re-running
       setPendingJoin(false);
-      setTimeout(() => {
-        console.log("Setting calling to true...");
-        setCalling(true);
-      }, 300);
+      // Set calling immediately to show call UI
+      console.log("Setting calling to true...");
+      setCalling(true);
     }
   }, [token, pendingJoin, appId, channel, uid, calling]);
-  
-  // Reset pendingJoin when call is actually connected or when calling becomes true
+
+  // Reset pendingJoin when connected
   useEffect(() => {
-    if ((isConnected || calling) && pendingJoin) {
-      console.log("Call connected or calling=true, resetting pendingJoin", {
-        isConnected,
-        calling,
-        pendingJoin,
-      });
+    if (isConnected && pendingJoin) {
+      console.log("Call connected, resetting pendingJoin");
       setPendingJoin(false);
     }
-  }, [isConnected, pendingJoin, calling]);
-  
-  // Reset refs when call ends to allow new calls
+  }, [isConnected, pendingJoin]);
+
+  // Cleanup refs when call ends to allow new calls
+  // Only reset when call is fully ended (not just paused)
   useEffect(() => {
-    if (!calling && !pendingJoin && !generatingToken) {
-      hasJoinedRef.current = false;
-      hasAttemptedJoinRef.current = false;
-      isGeneratingTokenRef.current = false;
+    if (!calling && !pendingJoin && !generatingToken && !token) {
+      // Only reset if we're truly not in a call state
+      // Add a small delay to ensure all state updates have completed
+      const resetTimer = setTimeout(() => {
+        if (!calling && !pendingJoin && !generatingToken && !token) {
+          hasJoinedRef.current = false;
+          hasAttemptedJoinRef.current = false;
+          isGeneratingTokenRef.current = false;
+          recoveryAttemptsRef.current.clear();
+          videoFallbackAttemptedRef.current.clear();
+          console.log("Refs reset for new call.");
+        }
+      }, 500);
+      return () => clearTimeout(resetTimer);
     }
-  }, [calling, pendingJoin, generatingToken]);
+  }, [calling, pendingJoin, generatingToken, token]);
 
   // Close more options menu when clicking outside
   useEffect(() => {
@@ -689,29 +1813,65 @@ const FPVideoCallingInner = ({
   // Handlers
 
   const handleEndCall = (): void => {
-    // Stop system camera and mic when call ends
     console.log("🛑 Call ending, stopping system camera and microphone");
-    stopMediaStreamTrack(localCameraTrack, "camera");
-    stopMediaStreamTrack(localMicrophoneTrack, "microphone");
+
+    // CRITICAL: Set calling to false FIRST to prevent new tracks from being created
+    // This ensures the hooks stop creating new tracks immediately
+    setCalling(false);
+    // Also reset camera state to ensure no new camera tracks are created
+    setCamera(false);
+
+    // Get current track references before state updates
+    const currentCameraTrack = localCameraTrack;
+    const currentMicTrack = localMicrophoneTrack;
+
+    // Stop MediaStreamTracks immediately (turns off system devices)
+    stopMediaStreamTrack(currentCameraTrack, "camera");
+    stopMediaStreamTrack(currentMicTrack, "microphone");
+
+    // Comprehensive fallback: Stop ALL video tracks from DOM elements
+    // This catches any tracks that might not be in the Agora track objects
+    stopAllVideoTracksFromDOM();
 
     // Also close the Agora tracks to fully release resources
     try {
-      if (localCameraTrack && typeof localCameraTrack.close === "function") {
-        localCameraTrack.close();
+      if (
+        currentCameraTrack &&
+        typeof currentCameraTrack.close === "function"
+      ) {
+        currentCameraTrack.close();
         console.log("🛑 Closed camera Agora track");
       }
-      if (
-        localMicrophoneTrack &&
-        typeof localMicrophoneTrack.close === "function"
-      ) {
-        localMicrophoneTrack.close();
+      if (currentMicTrack && typeof currentMicTrack.close === "function") {
+        currentMicTrack.close();
         console.log("🛑 Closed microphone Agora track");
       }
     } catch (error) {
       console.warn("Error closing tracks:", error);
     }
 
-    if (calling && onEndCall) {
+    // Multiple cleanup passes to ensure all tracks are stopped
+    // Pass 1: Immediate cleanup
+    setTimeout(() => {
+      console.log("🛑 Cleanup pass 1: stopping any remaining video tracks");
+      stopAllVideoTracksFromDOM();
+      // Also try to stop tracks from the current references again
+      stopMediaStreamTrack(currentCameraTrack, "camera");
+    }, 50);
+
+    // Pass 2: Delayed cleanup to catch any tracks created during transition
+    setTimeout(() => {
+      console.log("🛑 Cleanup pass 2: final cleanup of video tracks");
+      stopAllVideoTracksFromDOM();
+    }, 200);
+
+    // Pass 3: Final cleanup after a longer delay
+    setTimeout(() => {
+      console.log("🛑 Cleanup pass 3: final verification");
+      stopAllVideoTracksFromDOM();
+    }, 500);
+
+    if (onEndCall) {
       const callEndTime = Date.now();
       const callStartTime = callStartTimeRef.current;
       const duration = callStartTime
@@ -735,8 +1895,6 @@ const FPVideoCallingInner = ({
 
       callStartTimeRef.current = null;
       remoteUserEverJoinedRef.current = false;
-    } else {
-      setCalling((a) => !a);
     }
   };
 

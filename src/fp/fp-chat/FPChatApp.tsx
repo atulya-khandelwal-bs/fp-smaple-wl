@@ -29,6 +29,7 @@ interface ActiveCall {
   isInitiator: boolean;
   callType: "video" | "audio";
   localUserName: string;
+  localUserPhoto?: string;
   peerName: string;
   peerAvatar?: string;
 }
@@ -822,7 +823,8 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       channel,
       isInitiator: true,
       callType: callType,
-      localUserName: userId, // userId is now the patient
+      localUserName: userId, // userId is now the patient - will be used as fallback
+      localUserPhoto: undefined, // Local user photo - can be fetched from user profile if available
       peerName: selectedContact?.name || peerId,
       peerAvatar: selectedContact?.avatar,
     });
@@ -923,6 +925,7 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       isInitiator: false,
       callType: incomingCall.callType || "video", // Default to video if not specified
       localUserName: userId, // You can get actual name from user profile if available
+      localUserPhoto: undefined, // Local user photo - can be fetched from user profile if available
       peerName: contact?.name || incomingCall.from,
       peerAvatar: contact?.avatar,
     });
@@ -1729,7 +1732,7 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
           isAudioCall={activeCall.callType === "audio"}
           chatClient={clientRef.current}
           localUserName={activeCall.localUserName}
-          localUserPhoto={config.defaults.avatar}
+          localUserPhoto={activeCall.localUserPhoto}
           peerName={activeCall.peerName}
           peerAvatar={activeCall.peerAvatar}
         />

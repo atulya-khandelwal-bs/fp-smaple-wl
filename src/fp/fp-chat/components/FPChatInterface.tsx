@@ -4120,6 +4120,27 @@ export default function FPChatInterface({
       await cancelCallWithDietitian(scheduledCallFromApi.schedule_call_id);
       console.log("Call cancelled successfully");
 
+      // Send custom message for scheduled call canceled
+      if (peerId && scheduledCallFromApi.call_date_time) {
+        try {
+          const body = {
+            from: userId,
+            to: peerId,
+            type: "scheduled_call_canceled",
+            data: {
+              type: "scheduled_call_canceled",
+              time: scheduledCallFromApi.call_date_time, // Original scheduled time (epoch time in seconds)
+            },
+          };
+
+          await axios.post(config.api.customMessage, body);
+          console.log("Scheduled call canceled custom message sent successfully");
+        } catch (error) {
+          console.error("Error sending scheduled call canceled custom message:", error);
+          // Don't block the cancel flow if this fails
+        }
+      }
+
       // Refresh the scheduled call data to update the UI
       if (onRefreshScheduledCall) {
         await onRefreshScheduledCall();
@@ -4316,6 +4337,7 @@ export default function FPChatInterface({
           onClose={() => setShowScheduleModal(false)}
           onSchedule={handleSchedule}
           selectedContact={selectedContact}
+          userId={userId}
           scheduledCallFromApi={scheduledCallFromApi}
           onCancelCall={handleCancelCall}
         />

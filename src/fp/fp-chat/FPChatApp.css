@@ -1448,7 +1448,7 @@ input {
     padding: 1rem;
     margin-top: 110px; /* chat-header (~60px) + nav-tabs (~50px) */
     margin-bottom: 0;
-    padding-bottom: 130px; /* message-input-area height + extra padding */
+    padding-bottom: 60px; /* message-input-area height + extra padding */
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none; /* Firefox */
   }

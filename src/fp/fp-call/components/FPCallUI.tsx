@@ -208,32 +208,41 @@ export const FPCallUI = ({
   //   }
   // }, [remoteUsers]);
 
-  // Helper to reset controls timer on mobile
-  const resetControlsTimer = (): void => {
+  // Toggle controls visibility on mobile tap
+  const toggleControls = (): void => {
     if (window.innerWidth <= 768) {
-      setControlsVisible(true);
+      setControlsVisible(!controlsVisible);
+      // Clear any existing timer
       if (hideControlsTimerRef.current) {
         clearTimeout(hideControlsTimerRef.current);
+        hideControlsTimerRef.current = null;
       }
-      hideControlsTimerRef.current = setTimeout(() => {
-        setControlsVisible(false);
-      }, 10000);
     }
   };
 
-  // Show call UI if connected OR if calling is true (to handle race conditions)
+  // Show call UI if connected OR if calling is true (to handle delay in isConnected update)
   const shouldShowCallUI = isConnected || calling;
-  
+
+  console.log("localUserId", localUserId);
+  console.log("localUserName", localUserName);
+  console.log("localUserPhoto", localUserPhoto);
+  console.log("peerName", peerName);
+  console.log("peerAvatar", peerAvatar);
+
   return (
     <>
       {shouldShowCallUI ? (
-        <div className="video-call-container" ref={videoContainerRef}>
+        <div
+          className="video-call-container"
+          ref={videoContainerRef}
+          onClick={toggleControls}
+        >
           {/* Header */}
           <div
             className={`call-header ${
               controlsVisible ? "controls-visible" : "controls-hidden"
             }`}
-            onClick={resetControlsTimer}
+            onClick={toggleControls}
           >
             <h1 className="call-title">
               {isAudioCall ? "Audio Call" : "Video Call"}
@@ -308,9 +317,7 @@ export const FPCallUI = ({
               // Local user is main (full screen)
               <>
                 <div className="video-item local main-video">
-                  <div
-                    className="video-container"
-                  >
+                  <div className="video-container">
                     {localCameraTrack && cameraOn && !isAudioCall ? (
                       <LocalUser
                         audioTrack={localMicrophoneTrack}
@@ -382,9 +389,12 @@ export const FPCallUI = ({
                     }}
                     style={{ cursor: "pointer" }}
                   >
-                    {user.hasVideo && user.videoTrack ? (
+                    {/* Check for actual track presence first, not just hasVideo flag */}
+                    {user.videoTrack ? (
                       <RemoteUser
                         user={user}
+                        playVideo={true}
+                        playAudio={true}
                         style={{
                           width: "100%",
                           height: "100%",
@@ -429,15 +439,45 @@ export const FPCallUI = ({
                     key={user.uid}
                     className="video-item remote-main main-video"
                   >
-                    <RemoteUser
-                      user={user}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        borderRadius: "8px",
-                      }}
-                    />
+                    {/* Check for actual track presence first, not just hasVideo flag */}
+                    {user.videoTrack ? (
+                      <RemoteUser
+                        user={user}
+                        playVideo={true}
+                        playAudio={true}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          borderRadius: "8px",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: "#000",
+                          color: "#fff",
+                          borderRadius: "8px",
+                          gap: "16px",
+                        }}
+                      >
+                        <CircularAvatar
+                          name={peerName}
+                          photo={peerAvatar}
+                          userId={undefined}
+                          size={120}
+                        />
+                        <span style={{ fontSize: "16px", fontWeight: 500 }}>
+                          {peerName || "Camera off"}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -449,9 +489,7 @@ export const FPCallUI = ({
                   }}
                   style={{ cursor: "pointer" }}
                 >
-                  <div
-                    className="video-container"
-                  >
+                  <div className="video-container">
                     {localCameraTrack && cameraOn && !isAudioCall ? (
                       <LocalUser
                         audioTrack={localMicrophoneTrack}
@@ -517,9 +555,7 @@ export const FPCallUI = ({
               // Default layout for 1 user or 3+ users (no switching)
               <>
                 <div className="video-item local main-video">
-                  <div
-                    className="video-container"
-                  >
+                  <div className="video-container">
                     {localCameraTrack && cameraOn && !isAudioCall ? (
                       <LocalUser
                         audioTrack={localMicrophoneTrack}
@@ -584,9 +620,12 @@ export const FPCallUI = ({
                 {/* Remote Users */}
                 {remoteUsers.map((user) => (
                   <div key={user.uid} className="video-item remote-overlay">
-                    {user.hasVideo && user.videoTrack ? (
+                    {/* Check for actual track presence first, not just hasVideo flag */}
+                    {user.videoTrack ? (
                       <RemoteUser
                         user={user}
+                        playVideo={true}
+                        playAudio={true}
                         style={{
                           width: "100%",
                           height: "100%",
@@ -637,12 +676,18 @@ export const FPCallUI = ({
               alignItems: "center",
               justifyContent: "center",
             }}
-            onClick={resetControlsTimer}
+            onClick={(e): void => {
+              // Prevent toggle when clicking on control buttons
+              e.stopPropagation();
+            }}
           >
             {/* 1. Speaker/Volume Control */}
             <button
               className={`control-button ${!speakerOn ? "active" : ""}`}
-              onClick={(): void => setSpeakerOn((a) => !a)}
+              onClick={(e): void => {
+                e.stopPropagation();
+                setSpeakerOn((a) => !a);
+              }}
               title={speakerOn ? "Mute speaker" : "Unmute speaker"}
             >
               <div className="control-icon">
@@ -654,7 +699,10 @@ export const FPCallUI = ({
             {!isAudioCall && (
               <button
                 className={`control-button ${!cameraOn ? "active" : ""}`}
-                onClick={(): void => setCamera((a) => !a)}
+                onClick={(e): void => {
+                  e.stopPropagation();
+                  setCamera((a) => !a);
+                }}
                 title={cameraOn ? "Stop video" : "Start video"}
               >
                 <div className="control-icon">
@@ -666,7 +714,10 @@ export const FPCallUI = ({
             {/* 3. End Call (Red Rectangular Button) */}
             <button
               className="control-button danger"
-              onClick={(): void => onEndCall()}
+              onClick={(e): void => {
+                e.stopPropagation();
+                onEndCall();
+              }}
               title={calling ? "End call" : "Join call"}
               style={{
                 borderRadius: "8px",
@@ -682,7 +733,10 @@ export const FPCallUI = ({
             {/* 4. Microphone Control */}
             <button
               className={`control-button ${!micOn ? "active" : ""}`}
-              onClick={(): void => setMic((a) => !a)}
+              onClick={(e): void => {
+                e.stopPropagation();
+                setMic((a) => !a);
+              }}
               title={micOn ? "Mute microphone" : "Unmute microphone"}
             >
               <div className="control-icon">
@@ -695,7 +749,10 @@ export const FPCallUI = ({
               <div style={{ position: "relative" }}>
                 <button
                   className="control-button more-options-button"
-                  onClick={(): void => setShowMoreOptions((prev) => !prev)}
+                  onClick={(e): void => {
+                    e.stopPropagation();
+                    setShowMoreOptions((prev) => !prev);
+                  }}
                   title="More options"
                 >
                   <div className="control-icon">
@@ -724,7 +781,8 @@ export const FPCallUI = ({
                   >
                     <button
                       className="control-button"
-                      onClick={async (): Promise<void> => {
+                      onClick={async (e): Promise<void> => {
+                        e.stopPropagation();
                         if (flipCamera) {
                           await flipCamera();
                         }
@@ -739,7 +797,11 @@ export const FPCallUI = ({
                         opacity: canFlipCamera ? 1 : 0.5,
                         cursor: canFlipCamera ? "pointer" : "not-allowed",
                       }}
-                      title={canFlipCamera ? "Flip Camera" : "Only one camera available"}
+                      title={
+                        canFlipCamera
+                          ? "Flip Camera"
+                          : "Only one camera available"
+                      }
                     >
                       <div className="control-icon">
                         <RotateCcw size={18} />
@@ -750,7 +812,6 @@ export const FPCallUI = ({
               </div>
             )}
           </div>
-
         </div>
       ) : isStandalone ? (
         <div className="join-screen">
