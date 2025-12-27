@@ -4,11 +4,16 @@ import { Message } from "../../common/types/chat";
 
 interface FPScheduledCallBannerProps {
   scheduledCall: Message;
+  scheduledCallFromApi?: {
+    call_date_time: number;
+    call_type?: "video" | "audio";
+  } | null;
   onClick?: () => void;
 }
 
 export default function FPScheduledCallBanner({
   scheduledCall,
+  scheduledCallFromApi,
   onClick,
 }: FPScheduledCallBannerProps): React.JSX.Element | null {
   // Extract scheduled time
@@ -16,7 +21,6 @@ export default function FPScheduledCallBanner({
   let scheduledDate: Date | null = null;
 
   // Debug logging
-  console.log("FPScheduledCallBanner - scheduledCall:", scheduledCall);
 
   if (scheduledCall.system?.payload) {
     const payload = scheduledCall.system.payload as {
@@ -31,27 +35,14 @@ export default function FPScheduledCallBanner({
           : typeof payload.time === "string"
           ? parseInt(payload.time, 10)
           : undefined;
-
-      console.log(
-        "FPScheduledCallBanner - scheduledTime from payload:",
-        scheduledTime
-      );
     } else if (payload.scheduledDate) {
       scheduledDate = new Date(payload.scheduledDate);
-      console.log(
-        "FPScheduledCallBanner - scheduledDate from payload:",
-        scheduledDate
-      );
     }
   }
 
   // If we have time but not date, convert it
   if (scheduledTime && !scheduledDate) {
     scheduledDate = new Date(scheduledTime * 1000);
-    console.log(
-      "FPScheduledCallBanner - scheduledDate from time:",
-      scheduledDate
-    );
   }
 
   // Try to parse from content if payload doesn't have it
@@ -67,18 +58,11 @@ export default function FPScheduledCallBanner({
             ? contentObj.time
             : parseInt(String(contentObj.time), 10);
         scheduledDate = new Date(time * 1000);
-        console.log(
-          "FPScheduledCallBanner - scheduledDate from content:",
-          scheduledDate
-        );
       }
     } catch (e) {
       // Content is not JSON, ignore
-      console.log("FPScheduledCallBanner - Error parsing content:", e);
     }
   }
-
-  console.log("FPScheduledCallBanner - Final scheduledDate:", scheduledDate);
 
   // Format the date and time for display
   const formatDateTime = (date: Date): string => {
@@ -136,30 +120,50 @@ export default function FPScheduledCallBanner({
 
   // Don't render if we don't have a valid date
   if (!scheduledDate || isNaN(scheduledDate.getTime())) {
-    console.warn(
-      "FPScheduledCallBanner - No valid scheduled date found, not rendering"
-    );
-    console.warn(
-      "FPScheduledCallBanner - scheduledCall received:",
-      scheduledCall
-    );
-    console.warn("FPScheduledCallBanner - scheduledTime:", scheduledTime);
-    console.warn("FPScheduledCallBanner - scheduledDate:", scheduledDate);
     return null;
   }
 
   const dateTimeText = formatDateTime(scheduledDate);
-  console.log(
-    "FPScheduledCallBanner - Rendering banner with dateTimeText:",
-    dateTimeText
-  );
-  console.log(
-    "FPScheduledCallBanner - Banner should be visible with green background"
-  );
+
+  // Check if we're within 5 minutes of the scheduled time
+  const isWithinFiveMinutes = (): boolean => {
+    if (!scheduledCallFromApi?.call_date_time) {
+      // Fallback to scheduledCall time if scheduledCallFromApi is not available
+      if (!scheduledTime) {
+        return false;
+      }
+      const scheduledDateFromTime = new Date(scheduledTime * 1000);
+      const now = new Date();
+      const timeDiff = scheduledDateFromTime.getTime() - now.getTime();
+      const fiveMinutesInMs = 5 * 60 * 1000;
+      return timeDiff > 0 && timeDiff <= fiveMinutesInMs;
+    }
+
+    const scheduledDateFromApi = new Date(
+      scheduledCallFromApi.call_date_time * 1000
+    );
+    const now = new Date();
+
+    // Can't join if scheduled time is in the past
+    if (scheduledDateFromApi <= now) {
+      return false;
+    }
+
+    // Calculate time difference in milliseconds
+    const timeDiff = scheduledDateFromApi.getTime() - now.getTime();
+    const fiveMinutesInMs = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+    // Can join only if within 5 minutes
+    return timeDiff <= fiveMinutesInMs;
+  };
+
+  const canJoinCall = isWithinFiveMinutes();
+  // Only allow onClick if within 5 minutes
+  const handleClick = canJoinCall ? onClick : undefined;
 
   return (
     <div
-      onClick={onClick}
+      onClick={handleClick}
       className="scheduled-call-banner"
       style={{
         display: "flex",
@@ -168,19 +172,19 @@ export default function FPScheduledCallBanner({
         padding: "0.75rem 1rem",
         backgroundColor: "#10b981",
         borderRadius: "0 12px 12px 0",
-        cursor: onClick ? "pointer" : "default",
+        cursor: handleClick ? "pointer" : "default",
         marginBottom: "0.5rem",
         transition: "opacity 0.2s",
         width: "100%",
         boxSizing: "border-box",
       }}
       onMouseEnter={(e) => {
-        if (onClick) {
+        if (handleClick) {
           e.currentTarget.style.opacity = "0.9";
         }
       }}
       onMouseLeave={(e) => {
-        if (onClick) {
+        if (handleClick) {
           e.currentTarget.style.opacity = "1";
         }
       }}
@@ -217,8 +221,8 @@ export default function FPScheduledCallBanner({
         </span>
       </div>
 
-      {/* Arrow Icon */}
-      {onClick && <ChevronRight size={20} color="#FFFFFF" />}
+      {/* Arrow Icon - Only show if within 5 minutes */}
+      {canJoinCall && handleClick && <ChevronRight size={20} color="#FFFFFF" />}
     </div>
   );
 }

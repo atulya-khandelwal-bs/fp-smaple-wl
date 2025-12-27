@@ -6,7 +6,6 @@
 
 // Blocked UIDs - Agora Recorder and RTST Agent
 const BLOCKED_UIDS: Set<number> = new Set([999999999, 999999998]);
-const BLOCKED_UID_STRINGS: Set<string> = new Set(["999999999", "999999998"]);
 
 /**
  * Checks if a UID should proceed (not blocked)
@@ -37,18 +36,4 @@ export function shouldProceedWithRemoteUsers(
  */
 export function isBlockedUID(uid: string | number | null | undefined): boolean {
   return !shouldProceedWithRemoteUsers(uid);
-}
-
-/**
- * Get all blocked UIDs as an array
- */
-export function getBlockedUIDs(): number[] {
-  return Array.from(BLOCKED_UIDS);
-}
-
-/**
- * Get all blocked UIDs as strings
- */
-export function getBlockedUIDStrings(): string[] {
-  return Array.from(BLOCKED_UID_STRINGS);
 }

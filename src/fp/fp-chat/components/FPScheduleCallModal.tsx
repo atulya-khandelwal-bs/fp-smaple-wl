@@ -60,7 +60,6 @@ export default function FPScheduleCallModal({
       const data = await fetchDietitianDetails(callDate);
       setDietitianData(data);
     } catch (err) {
-      console.error("Error fetching dietitian details:", err);
     } finally {
       setLoading(false);
     }
@@ -263,16 +262,12 @@ export default function FPScheduleCallModal({
 
     const health_coach_schedule_id = getSelectedSlotId();
     if (!health_coach_schedule_id) {
-      console.error(
-        "Could not find health_coach_schedule_id for selected slot"
-      );
       return;
     }
 
     const health_coach_id =
       dietitianData?.result?.dietitian_details?.health_coach_id;
     if (!health_coach_id) {
-      console.error("Could not find health_coach_id");
       return;
     }
 
@@ -317,9 +312,7 @@ export default function FPScheduleCallModal({
           };
 
           await axios.post(config.api.customMessage, body);
-          console.log("Call scheduled custom message sent successfully");
         } catch (error) {
-          console.error("Error sending call scheduled custom message:", error);
           // Don't block the scheduling flow if this fails
         }
       }
@@ -336,7 +329,6 @@ export default function FPScheduleCallModal({
       );
       onClose();
     } catch (error) {
-      console.error("Error scheduling call:", error);
       // You might want to show an error message to the user here
     } finally {
       setScheduling(false);
@@ -536,7 +528,6 @@ export default function FPScheduleCallModal({
                     await onCancelCall();
                     onClose();
                   } catch (error) {
-                    console.error("Error cancelling call:", error);
                     // You might want to show an error message to the user here
                   }
                 }}

@@ -467,7 +467,6 @@ export const formatMessage = (
 
   // Ensure msg has required properties
   if (!msg || typeof msg !== "object" || typeof msg === "string") {
-    console.warn("Invalid message format:", msg);
     return {
       id: `invalid-${Date.now()}`,
       sender: "Unknown",
@@ -521,13 +520,6 @@ export const formatMessage = (
   if (agoraMsg.type === "custom") {
     const customData = extractCustomMessageData(agoraMsg);
 
-    console.log("🔍 [formatMessage] Extracted custom data:", {
-      messageId: agoraMsg.id,
-      customData: customData,
-      customExts: agoraMsg.customExts,
-      v2CustomExts: agoraMsg["v2:customExts"],
-      ext: agoraMsg.ext,
-    });
 
     if (customData && customData.type) {
       const type = String(customData.type).toLowerCase();
@@ -617,14 +609,6 @@ export const formatMessage = (
           }
         }
 
-        console.log("📞 [formatMessage] Processing call message:", {
-          type,
-          callPayload,
-          call_details: finalCallDetails,
-          call_url: finalCallDetails?.call_url,
-          hasCallDetails: !!finalCallDetails,
-          fullPayload: callPayload,
-        });
 
         return {
           ...baseMessage,
@@ -706,11 +690,6 @@ export const formatMessage = (
           time?: number | string;
         };
 
-        console.log("📅 [formatMessage] Processing call_scheduled message:", {
-          type,
-          callScheduledData,
-          time: callScheduledData.time,
-        });
 
         // Parse time - handle both string and number formats
         let scheduledTime: number | undefined;
@@ -723,13 +702,6 @@ export const formatMessage = (
               : undefined;
         }
 
-        console.log("📅 [formatMessage] Parsed scheduled time:", {
-          originalTime: callScheduledData.time,
-          scheduledTime,
-          scheduledDate: scheduledTime
-            ? new Date(scheduledTime * 1000).toISOString()
-            : null,
-        });
 
         // Format the scheduled time for display
         const scheduledDate = scheduledTime

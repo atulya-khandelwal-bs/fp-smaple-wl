@@ -260,7 +260,6 @@ export default function FPMessageBubble({
           try {
             redirectionDetails = JSON.parse(payload.redirection_details);
           } catch (e) {
-            console.error("Failed to parse redirection_details:", e);
             redirectionDetails = [];
           }
         } else if (Array.isArray(payload.redirection_details)) {

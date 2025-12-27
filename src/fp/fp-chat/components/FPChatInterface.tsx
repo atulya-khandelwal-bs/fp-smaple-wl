@@ -397,16 +397,6 @@ export default function FPChatInterface({
 
         // Debug log for edited messages
         if (logIsEdited) {
-          console.log(
-            "🔍 [Log Processing] Processing edited message from log:",
-            {
-              log: log,
-              serverMsgId: serverMsgId,
-              mid: mid,
-              isEdited: logIsEdited,
-              entry: entry,
-            }
-          );
         }
 
         if (!log) return null;
@@ -523,22 +513,10 @@ export default function FPChatInterface({
                     // Handle both 'products' and 'product_list' fields
                     if (Array.isArray(obj.products)) {
                       products = obj.products;
-                      console.log(
-                        "✅ [Outgoing] Extracted products from obj.products:",
-                        products.length
-                      );
                     } else if (Array.isArray(obj.product_list)) {
                       products = obj.product_list;
-                      console.log(
-                        "✅ [Outgoing] Extracted products from obj.product_list:",
-                        products.length
-                      );
                     } else {
                       products = [];
-                      console.warn(
-                        "⚠️ [Outgoing] No products array found. obj:",
-                        obj
-                      );
                     }
                     messageContent = "Products";
                     break;
@@ -555,10 +533,6 @@ export default function FPChatInterface({
                       obj.profilePhoto || obj.icons_details?.left_icon || "";
 
                     // Debug: Log the parsed object to see what fields are available
-                    console.log(
-                      "🔍 [FPChatInterface] Parsed obj for coach message:",
-                      obj
-                    );
 
                     // Determine action_type - prioritize obj.action_type, then obj.type
                     const actionType =
@@ -615,10 +589,7 @@ export default function FPChatInterface({
                     };
 
                     // Debug: Log the constructed payload
-                    console.log(
-                      "🔍 [FPChatInterface] Constructed payload:",
-                      system.payload
-                    );
+
                     messageContent =
                       name || extractedTitle || "New nutritionist assigned";
                     break;
@@ -770,10 +741,6 @@ export default function FPChatInterface({
             `outgoing-${peerId}-${logHash}-${logIndex}-${uniqueTimestamp}`;
 
           if (serverMsgId) {
-            console.log(
-              "✅ [FPChatInterface] Using serverMsgId from send response:",
-              serverMsgId
-            );
           }
 
           // Ensure products is always an array when messageType is products
@@ -1214,27 +1181,7 @@ export default function FPChatInterface({
           };
 
           // Debug log for edited messages - show the created message object
-          if (messageIsEdited) {
-            console.log(
-              "✅ [Message Creation] Created edited message object:",
-              {
-                id: generatedId,
-                content: messageContent,
-                serverMsgId: messageServerMsgId,
-                mid: messageMid,
-                isEdited: messageIsEdited,
-                sender: sender,
-                fullMessage: {
-                  id: generatedId,
-                  sender,
-                  content: messageContent,
-                  mid: messageMid,
-                  serverMsgId: messageServerMsgId,
-                  isEdited: messageIsEdited,
-                },
-              }
-            );
-          }
+         
         }
       })
       .filter((msg) => msg !== null); // Filter out null messages (hidden call messages)
@@ -1270,12 +1217,6 @@ export default function FPChatInterface({
         ) {
           existingMessagesByServerId.set(msg.id, msg);
         }
-      });
-
-      console.log("🔍 [Message Matching] Existing messages mapped:", {
-        byMid: Array.from(existingMessagesByMid.keys()),
-        byServerId: Array.from(existingMessagesByServerId.keys()),
-        totalMessages: currentPeerMessages.length,
       });
 
       // Helper function to create matching key (same as in server fetch)
@@ -1524,20 +1465,7 @@ export default function FPChatInterface({
 
         // If we found an existing message with the same mid/serverMsgId/id and this is marked as edited
         if (existingMsg && (msg.isEdited || msg.mid || msg.serverMsgId)) {
-          console.log(
-            "✅ [Message Processing] Found existing message for edit:",
-            {
-              existingId: existingMsg.id,
-              existingContent: existingMsg.content,
-              existingServerMsgId: existingMsg.serverMsgId,
-              newContent: msg.content,
-              newServerMsgId: msg.serverMsgId,
-              msgIsEdited: msg.isEdited,
-              msgMid: msg.mid,
-              msgServerMsgId: msg.serverMsgId,
-              fullMsg: msg,
-            }
-          );
+         
 
           // This is an edited message - mark it for update
           // IMPORTANT: Keep the new content from msg (the edited message)
@@ -1560,15 +1488,7 @@ export default function FPChatInterface({
         if (existingIds.has(msg.id)) {
           // If this is an edited message, we still want to process it
           if (msg.isEdited && (msg.mid || msg.serverMsgId)) {
-            console.log(
-              "✅ [Filter] Allowing edited message through (by ID check):",
-              {
-                msgId: msg.id,
-                msgMid: msg.mid,
-                msgServerMsgId: msg.serverMsgId,
-                msgContent: msg.content,
-              }
-            );
+          
             return true; // Allow edited messages to pass through
           }
           return false;
@@ -1610,15 +1530,7 @@ export default function FPChatInterface({
           if (isExistingServerMsg && isNewServerMsg) {
             // If this is an edited message, allow it through
             if (msg.isEdited && (msg.mid || msg.serverMsgId)) {
-              console.log(
-                "✅ [Filter] Allowing edited message through (by key match):",
-                {
-                  msgId: msg.id,
-                  msgMid: msg.mid,
-                  msgServerMsgId: msg.serverMsgId,
-                  msgContent: msg.content,
-                }
-              );
+             
               return true;
             }
             return false;
@@ -1636,29 +1548,6 @@ export default function FPChatInterface({
       if (currentPeerMessages.length === 0) {
         return uniqueNewMessages;
       }
-
-      // Merge: keep existing messages for this peer + add new unique ones
-      // First, handle edited messages - update existing messages with same mid or id
-      console.log("🔍 [Message Merge] Starting merge process:", {
-        currentPeerMessagesCount: currentPeerMessages.length,
-        uniqueNewMessagesCount: uniqueNewMessages.length,
-        uniqueNewMessagesWithIsEdited: uniqueNewMessages.filter(
-          (m) => m.isEdited
-        ).length,
-        uniqueNewMessagesDetails: uniqueNewMessages
-          .filter((m) => m.isEdited)
-          .map((m) => ({
-            id: m.id,
-            content: m.content,
-            serverMsgId: m.serverMsgId,
-            mid: m.mid,
-            isEdited: m.isEdited,
-          })),
-        existingMessagesByServerId: Array.from(
-          existingMessagesByServerId.keys()
-        ),
-        existingMessagesByMid: Array.from(existingMessagesByMid.keys()),
-      });
 
       const updatedMessages = currentPeerMessages.map((existingMsg) => {
         // Find ALL matching edited messages (there might be duplicates)
@@ -1719,79 +1608,17 @@ export default function FPChatInterface({
             : null;
 
         if (allMatchingEditedMsgs.length > 1) {
-          console.log(
-            "⚠️ [Message Merge] Multiple edited messages found, selecting most recent:",
-            {
-              existingId: existingMsg.id,
-              existingContent: existingMsg.content,
-              allMatches: allMatchingEditedMsgs.map((m) => ({
-                id: m.id,
-                content: m.content,
-                contentLength: m.content.length,
-                isDifferent: m.content !== existingMsg.content,
-                createdAt: m.createdAt,
-              })),
-              selected: editedMsg
-                ? {
-                    id: editedMsg.id,
-                    content: editedMsg.content,
-                  }
-                : null,
-            }
-          );
         }
 
         // Debug: log if we're looking for a match for this message
         if (existingMsg.serverMsgId || existingMsg.mid) {
-          console.log("🔍 [Message Merge] Checking for edit match:", {
-            existingId: existingMsg.id,
-            existingServerMsgId: existingMsg.serverMsgId,
-            existingMid: existingMsg.mid,
-            existingContent: existingMsg.content,
-            foundMatch: !!editedMsg,
-            matchingMsg: editedMsg
-              ? {
-                  id: editedMsg.id,
-                  content: editedMsg.content,
-                  serverMsgId: editedMsg.serverMsgId,
-                  mid: editedMsg.mid,
-                  isEdited: editedMsg.isEdited,
-                }
-              : null,
-          });
         }
 
         if (editedMsg) {
-          console.log(
-            "🔄 [Message Update] MATCHED - Updating edited message:",
-            {
-              existingId: existingMsg.id,
-              existingMid: existingMsg.mid,
-              existingServerMsgId: existingMsg.serverMsgId,
-              existingContent: existingMsg.content,
-              existingIsEdited: existingMsg.isEdited,
-              newId: editedMsg.id,
-              newMid: editedMsg.mid,
-              newServerMsgId: editedMsg.serverMsgId,
-              newContent: editedMsg.content,
-              newIsEdited: editedMsg.isEdited,
-              editedMsgFull: editedMsg,
-              existingMsgFull: existingMsg,
-            }
-          );
-
           // Update the existing message with new content and mark as edited
           // Ensure we're using the new content from the edited message
           const newContent = editedMsg.content || existingMsg.content;
           const contentChanged = newContent !== existingMsg.content;
-
-          console.log("🔄 [Message Update] Content analysis:", {
-            oldContent: existingMsg.content,
-            newContent: newContent,
-            editedMsgContent: editedMsg.content,
-            contentChanged: contentChanged,
-            willUpdate: contentChanged || !existingMsg.isEdited,
-          });
 
           const updatedMessage = {
             ...existingMsg,
@@ -1805,21 +1632,6 @@ export default function FPChatInterface({
             audioUrl: editedMsg.audioUrl || existingMsg.audioUrl,
             fileUrl: editedMsg.fileUrl || existingMsg.fileUrl,
           };
-
-          console.log("🔄 [Message Update] FINAL RESULT:", {
-            before: {
-              id: existingMsg.id,
-              content: existingMsg.content,
-              isEdited: existingMsg.isEdited,
-            },
-            after: {
-              id: updatedMessage.id,
-              content: updatedMessage.content,
-              isEdited: updatedMessage.isEdited,
-            },
-            contentUpdated: updatedMessage.content !== existingMsg.content,
-            fullUpdatedMessage: updatedMessage,
-          });
 
           return updatedMessage;
         }
@@ -2903,17 +2715,7 @@ export default function FPChatInterface({
         const agoraRes = agoraResult.value;
         agoraMessages = (agoraRes?.messages || []) as AgoraMessage[];
         agoraCursor = agoraRes?.cursor;
-        console.log("📥 [fetchInitialMessages] Agora Response received:", {
-          targetId,
-          hasCursor: !!agoraCursor,
-          cursor: agoraCursor,
-          messagesCount: agoraMessages.length,
-        });
       } else {
-        console.warn(
-          "❌ [fetchInitialMessages] Agora fetch failed:",
-          agoraResult.reason
-        );
       }
 
       // Process API messages
@@ -2923,18 +2725,7 @@ export default function FPChatInterface({
         const apiRes = apiResult.value;
         apiMessages = apiRes?.messages || [];
         apiCursor = apiRes?.nextCursor;
-        console.log("📥 [fetchInitialMessages] API Response received:", {
-          url: apiUrl.toString(),
-          conversationId,
-          hasNextCursor: !!apiCursor,
-          nextCursor: apiCursor,
-          messagesCount: apiMessages.length,
-        });
       } else {
-        console.warn(
-          "❌ [fetchInitialMessages] API fetch failed:",
-          apiResult.reason
-        );
       }
 
       // Set cursor for pagination (use Agora cursor if available, otherwise API cursor)
@@ -2957,87 +2748,17 @@ export default function FPChatInterface({
       const oldMessages = [...agoraMessages, ...convertedApiMessages];
 
       // 🔍 Detailed console log of all received messages
-      console.log(
-        "📨 [fetchInitialMessages] All messages received from Agora:",
-        {
-          totalMessages: oldMessages.length,
-          messages: oldMessages.map((msg: AgoraMessage, index: number) => {
-            return {
-              index: index + 1,
-              id: msg.id,
-              mid: msg.mid, // Message ID from delivery receipt (used for editing)
-              type: msg.type,
-              from: msg.from,
-              to: msg.to,
-              time: msg.time,
-              createdAt: msg.time ? new Date(msg.time).toISOString() : null,
-              msg: msg.msg,
-              msgContent: msg.msgContent,
-              body: msg.body,
-              data: msg.data,
-              ext: msg.ext,
-              customExts: msg.customExts,
-              "v2:customExts": msg["v2:customExts"],
-              fullMessage: msg, // Full message object for complete inspection
-            };
-          }),
-        }
-      );
-
-      console.log(
-        "📨 [fetchInitialMessages] Combined messages from both sources:",
-        {
-          agoraCount: agoraMessages.length,
-          apiCount: apiMessages.length,
-          totalCount: oldMessages.length,
-          messages: oldMessages.map((msg: AgoraMessage) => {
-            return {
-              id: msg.id,
-              type: msg.type,
-              from: msg.from,
-              to: msg.to,
-              time: msg.time,
-              msg: msg.msg,
-              body: msg.body,
-            };
-          }),
-        }
-      );
 
       // Filter out null messages (healthCoachChanged, mealPlanUpdate, etc.)
       const convertedMessages = oldMessages.filter(
         (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
       );
 
-      console.log("🔄 [fetchInitialMessages] Converted messages:", {
-        count: convertedMessages.length,
-        messages: convertedMessages.map((msg: AgoraMessage) => ({
-          id: msg.id,
-          type: msg.type,
-          msg: msg.msg,
-          from: msg.from,
-          to: msg.to,
-          time: msg.time,
-        })),
-      });
-
       const formatted = convertedMessages
         .map((msg: AgoraMessage) =>
           formatMessage(msg, userId, peerId || "", selectedContact, coachInfo)
         )
         .filter((msg: Message | null): msg is Message => msg !== null); // Filter out null messages (hidden call initiate messages, etc.)
-
-      console.log("✨ [fetchInitialMessages] Formatted messages:", {
-        count: formatted.length,
-        messages: formatted.map((msg: Message) => ({
-          id: msg.id,
-          content: msg.content,
-          sender: msg.sender,
-          messageType: msg.messageType,
-          isEdited: msg.isEdited,
-          createdAt: msg.createdAt,
-        })),
-      });
 
       // 🟢 DEDUPLICATE messages by ID: Filter out duplicates from both Agora and API
       // This prevents the same message from appearing twice when fetched from both sources
@@ -3046,10 +2767,6 @@ export default function FPChatInterface({
         // Use message ID for deduplication
         if (msg.id) {
           if (seenMessageIds.has(msg.id)) {
-            console.log(
-              "🔄 [fetchInitialMessages] Duplicate message filtered:",
-              msg.id
-            );
             return false; // Filter out duplicate
           }
           seenMessageIds.add(msg.id);
@@ -3081,12 +2798,6 @@ export default function FPChatInterface({
           }
         }
         return true; // Keep all messages that pass deduplication
-      });
-
-      console.log("🔄 [fetchInitialMessages] Deduplication result:", {
-        before: formatted.length,
-        after: deduplicatedFormatted.length,
-        duplicatesRemoved: formatted.length - deduplicatedFormatted.length,
       });
 
       // Find the most recent message from history to update last message
@@ -3439,22 +3150,6 @@ export default function FPChatInterface({
         const otherPeerMessages = prev.filter((msg) => msg.peerId !== peerId);
         const finalMessages = [...otherPeerMessages, ...allMessages];
 
-        console.log("🔀 [fetchInitialMessages] Final merged messages:", {
-          totalCount: finalMessages.length,
-          currentPeerCount: allMessages.length,
-          otherPeersCount: otherPeerMessages.length,
-          currentPeerMessages: allMessages.map((msg: Message) => ({
-            id: msg.id,
-            content:
-              msg.content?.substring(0, 50) +
-              (msg.content && msg.content.length > 50 ? "..." : ""),
-            sender: msg.sender,
-            messageType: msg.messageType,
-            isEdited: msg.isEdited,
-            createdAt: msg.createdAt,
-          })),
-        });
-
         return finalMessages;
       });
 
@@ -3493,17 +3188,6 @@ export default function FPChatInterface({
 
         if (messageIds.size > 0) {
           onMessagesLoadedFromHistory(Array.from(messageIds));
-          console.log(
-            "✅ [fetchInitialMessages] Marked messages as processed:",
-            messageIds.size,
-            "unique IDs from",
-            oldMessages.length,
-            "messages"
-          );
-          console.log(
-            "📋 [fetchInitialMessages] Sample IDs:",
-            Array.from(messageIds).slice(0, 5)
-          );
         }
       }
 
@@ -3511,12 +3195,7 @@ export default function FPChatInterface({
       setTimeout(() => {
         scrollToBottom();
       }, 100);
-    } catch (err) {
-      console.error(
-        "❌ [fetchInitialMessages] Error fetching initial messages:",
-        err
-      );
-    }
+    } catch (err) {}
   };
 
   const fetchMoreMessages = async (): Promise<void> => {
@@ -3589,18 +3268,7 @@ export default function FPChatInterface({
         const agoraRes = agoraResult.value;
         agoraMessages = (agoraRes?.messages || []) as AgoraMessage[];
         agoraCursor = agoraRes?.cursor;
-        console.log("📥 [fetchMoreMessages] Agora Response received:", {
-          targetId,
-          cursor,
-          hasCursor: !!agoraCursor,
-          nextCursor: agoraCursor,
-          messagesCount: agoraMessages.length,
-        });
       } else {
-        console.warn(
-          "❌ [fetchMoreMessages] Agora fetch failed:",
-          agoraResult.reason
-        );
       }
 
       // Process API messages
@@ -3610,19 +3278,7 @@ export default function FPChatInterface({
         const apiRes = apiResult.value;
         apiMessages = apiRes?.messages || [];
         apiCursor = apiRes?.nextCursor;
-        console.log("📥 [fetchMoreMessages] API Response received:", {
-          url: apiUrl.toString(),
-          conversationId,
-          cursor,
-          hasNextCursor: !!apiCursor,
-          nextCursor: apiCursor,
-          messagesCount: apiMessages.length,
-        });
       } else {
-        console.warn(
-          "❌ [fetchMoreMessages] API fetch failed:",
-          apiResult.reason
-        );
       }
 
       // Convert API messages to Agora format
@@ -3650,31 +3306,6 @@ export default function FPChatInterface({
         setHasMore(false);
       }
 
-      // 🔍 Detailed console log of all received messages
-      console.log("📨 [fetchMoreMessages] All messages received from Agora:", {
-        totalMessages: newMessages.length,
-        messages: newMessages.map((msg: AgoraMessage, index: number) => {
-          return {
-            index: index + 1,
-            id: msg.id,
-            mid: msg.mid, // Message ID from delivery receipt (used for editing)
-            type: msg.type,
-            from: msg.from,
-            to: msg.to,
-            time: msg.time,
-            createdAt: msg.time ? new Date(msg.time).toISOString() : null,
-            msg: msg.msg,
-            msgContent: msg.msgContent,
-            body: msg.body,
-            data: msg.data,
-            ext: msg.ext,
-            customExts: msg.customExts,
-            "v2:customExts": msg["v2:customExts"],
-            fullMessage: msg, // Full message object for complete inspection
-          };
-        }),
-      });
-
       // Filter out null messages (healthCoachChanged, mealPlanUpdate, etc.)
       const convertedMessages = newMessages.filter(
         (msg: AgoraMessage | null): msg is AgoraMessage => msg !== null
@@ -3685,20 +3316,6 @@ export default function FPChatInterface({
         )
         .filter((msg: Message | null): msg is Message => msg !== null); // Filter out null messages (hidden call initiate messages, etc.)
 
-      console.log("✨ [fetchMoreMessages] Formatted messages:", {
-        count: formatted.length,
-        messages: formatted.map((msg: Message) => ({
-          id: msg.id,
-          content:
-            msg.content?.substring(0, 50) +
-            (msg.content && msg.content.length > 50 ? "..." : ""),
-          sender: msg.sender,
-          messageType: msg.messageType,
-          isEdited: msg.isEdited,
-          createdAt: msg.createdAt,
-        })),
-      });
-
       // 🟢 DEDUPLICATE messages by ID: Filter out duplicates from both Agora and API
       // This prevents the same message from appearing twice when fetched from both sources
       const seenMessageIds = new Set<string>();
@@ -3706,10 +3323,6 @@ export default function FPChatInterface({
         // Use message ID for deduplication
         if (msg.id) {
           if (seenMessageIds.has(msg.id)) {
-            console.log(
-              "🔄 [fetchMoreMessages] Duplicate message filtered:",
-              msg.id
-            );
             return false; // Filter out duplicate
           }
           seenMessageIds.add(msg.id);
@@ -3741,12 +3354,6 @@ export default function FPChatInterface({
           }
         }
         return true; // Keep all messages that pass deduplication
-      });
-
-      console.log("🔄 [fetchMoreMessages] Deduplication result:", {
-        before: formatted.length,
-        after: deduplicatedFormatted.length,
-        duplicatesRemoved: formatted.length - deduplicatedFormatted.length,
       });
 
       // 🟡 Prevent scroll-to-bottom behavior
@@ -4025,10 +3632,7 @@ export default function FPChatInterface({
 
   // Find the most recent scheduled call message
   const getScheduledCall = (): Message | null => {
-    console.log(
-      "getScheduledCall - scheduledCallFromApi:",
-      scheduledCallFromApi
-    );
+
 
     // First, check if we have a scheduled call from API with valid data
     if (
@@ -4037,21 +3641,13 @@ export default function FPChatInterface({
       scheduledCallFromApi.date &&
       scheduledCallFromApi.start_time
     ) {
-      console.log("getScheduledCall - scheduledCallFromApi has valid data");
       const scheduledDate = new Date(
         scheduledCallFromApi.call_date_time * 1000
       );
       const now = new Date();
-      console.log("getScheduledCall - scheduledDate:", scheduledDate);
-      console.log("getScheduledCall - now:", now);
-      console.log(
-        "getScheduledCall - scheduledDate > now?",
-        scheduledDate > now
-      );
 
       // Show if scheduled time is in the future (don't filter by one hour ago, show all future calls)
       if (scheduledDate > now) {
-        console.log("getScheduledCall - Creating message object for banner");
         // Create a message object for the banner
         return {
           id: `api-scheduled-${scheduledCallFromApi.call_date_time}`,
@@ -4072,20 +3668,10 @@ export default function FPChatInterface({
           },
         };
       } else {
-        console.log(
-          "getScheduledCall - Scheduled date is in the past, not showing"
-        );
+    
       }
     } else {
-      console.log(
-        "getScheduledCall - scheduledCallFromApi is missing or invalid:",
-        {
-          exists: !!scheduledCallFromApi,
-          hasCallDateTime: !!scheduledCallFromApi?.call_date_time,
-          hasDate: !!scheduledCallFromApi?.date,
-          hasStartTime: !!scheduledCallFromApi?.start_time,
-        }
-      );
+     
     }
 
     // No fallback to messages - only use scheduledCallFromApi as single source of truth
@@ -4097,18 +3683,6 @@ export default function FPChatInterface({
     return getScheduledCall();
   }, [scheduledCallFromApi, messages, userId, peerId]);
 
-  // Debug: Log scheduled call info
-  useEffect(() => {
-    if (scheduledCallFromApi) {
-      console.log("scheduledCallFromApi:", scheduledCallFromApi);
-    }
-    if (scheduledCall) {
-      console.log("scheduledCall found:", scheduledCall);
-    } else {
-      console.log("No scheduled call found");
-    }
-  }, [scheduledCallFromApi, scheduledCall]);
-
   // Handle cancel call
   const handleCancelCall = async (): Promise<void> => {
     if (!scheduledCallFromApi?.schedule_call_id) {
@@ -4118,7 +3692,6 @@ export default function FPChatInterface({
 
     try {
       await cancelCallWithDietitian(scheduledCallFromApi.schedule_call_id);
-      console.log("Call cancelled successfully");
 
       // Send custom message for scheduled call canceled
       if (peerId && scheduledCallFromApi.call_date_time) {
@@ -4134,9 +3707,11 @@ export default function FPChatInterface({
           };
 
           await axios.post(config.api.customMessage, body);
-          console.log("Scheduled call canceled custom message sent successfully");
         } catch (error) {
-          console.error("Error sending scheduled call canceled custom message:", error);
+          console.error(
+            "Error sending scheduled call canceled custom message:",
+            error
+          );
           // Don't block the cancel flow if this fails
         }
       }
@@ -4146,12 +3721,11 @@ export default function FPChatInterface({
         await onRefreshScheduledCall();
       }
     } catch (error) {
-      console.error("Error cancelling call:", error);
       // You might want to show an error message to the user here
     }
   };
 
-  // Determine if banner should be shown
+  // Determine if banner should be shown (show if scheduled time is in the future)
   const shouldShowBanner = (): boolean => {
     if (
       scheduledCall &&
@@ -4161,9 +3735,33 @@ export default function FPChatInterface({
       const scheduledTime = scheduledCall.system.payload.time as number;
       const scheduledDate = new Date(scheduledTime * 1000);
       const now = new Date();
+
+      // Show banner if scheduled time is in the future
       return scheduledDate > now;
     }
     return false;
+  };
+
+  // Check if call can be initiated (within 5 minutes of scheduled time)
+  const canInitiateCall = (): boolean => {
+    if (!scheduledCallFromApi?.call_date_time) {
+      return false;
+    }
+
+    const scheduledDate = new Date(scheduledCallFromApi.call_date_time * 1000);
+    const now = new Date();
+
+    // Can't initiate if scheduled time is in the past
+    if (scheduledDate <= now) {
+      return false;
+    }
+
+    // Calculate time difference in milliseconds
+    const timeDiff = scheduledDate.getTime() - now.getTime();
+    const fiveMinutesInMs = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+    // Can initiate only if within 5 minutes
+    return timeDiff <= fiveMinutesInMs;
   };
 
   const isBannerVisible = shouldShowBanner();
@@ -4179,7 +3777,14 @@ export default function FPChatInterface({
       {isBannerVisible && (
         <FPScheduledCallBanner
           scheduledCall={scheduledCall!}
+          scheduledCallFromApi={scheduledCallFromApi}
           onClick={() => {
+            // Only allow call initiation if within 5 minutes of scheduled time
+            if (!canInitiateCall()) {
+          
+              return;
+            }
+
             // Initiate call with the scheduled call type
             if (onInitiateCall && scheduledCallFromApi) {
               const callType = scheduledCallFromApi.call_type || "video";

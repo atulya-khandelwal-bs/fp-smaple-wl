@@ -39,7 +39,6 @@ export default function FPCoachAssignedView({
   const handleClick = (): void => {
     // Log action_id for callback/tracking purposes
     if (actionId) {
-      console.log("Coach assigned clicked - action_id:", actionId);
     }
 
     if (redirectUrl) {

@@ -29,6 +29,9 @@
   font-family: "Figtree", ui-sans-serif, system-ui, -apple-system, Segoe UI,
     Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
   overflow: hidden;
+  touch-action: pan-y; /* Enable vertical scrolling on mobile */
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  position: relative; /* Ensure proper positioning context */
 }
 
 .app-container > .container {
@@ -236,18 +239,6 @@ input {
   position: relative;
 }
 
-.conversation-panel {
-  width: 20%;
-  /* min-width: 250px; */
-  border-right: 1px solid var(--border);
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  height: 100vh;
-  position: relative;
-}
-
 .chat-panel {
   width: 20%;
   /* min-width: 300px; */
@@ -258,6 +249,25 @@ input {
   height: 100vh;
   position: relative;
   border-right: 1px solid var(--border);
+}
+
+.chat-panel.full-width {
+  width: 100%;
+  border-right: none;
+}
+
+/* Mobile: Ensure full-width chat panel works correctly */
+@media (max-width: 768px) {
+  .chat-panel.full-width {
+    width: 100% !important;
+    min-width: 100% !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    z-index: 2 !important;
+    pointer-events: auto !important;
+    transform: translateX(0) !important;
+  }
 }
 
 /* Chat Interface Styles */
@@ -846,282 +856,6 @@ input {
   font-style: italic;
 }
 
-/* Conversation List Styles */
-.conversation-list {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  max-height: 100vh;
-  background: var(--bg);
-  overflow: hidden;
-}
-
-.conversation-header {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--bg);
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.task-badge {
-  background: var(--red-accent);
-  color: white;
-  border-radius: 50%;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.header-actions {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.header-icon-btn {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0.25rem;
-  border-radius: 0.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s, background-color 0.2s;
-  outline: none;
-}
-
-.header-icon-btn:hover {
-  color: var(--text);
-  background: var(--light-gray);
-}
-
-.header-icon-btn:focus,
-.header-icon-btn:active {
-  outline: none;
-}
-
-.add-conversation-form {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--light-gray);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.add-form-input {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  background: var(--bg);
-  color: var(--text);
-  outline: none;
-}
-
-.add-form-input:focus {
-  border-color: var(--primary);
-}
-
-.add-form-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.add-form-btn {
-  flex: 1;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  cursor: pointer;
-  background: var(--bg);
-  color: var(--text);
-  transition: background-color 0.2s;
-}
-
-.add-form-btn.primary {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
-}
-
-.add-form-btn.primary:hover:not(:disabled) {
-  background: var(--primary-600);
-}
-
-.add-form-btn:hover:not(:disabled) {
-  background: var(--light-gray);
-}
-
-.add-form-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.conversations-container {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
-  height: 0; /* This allows flex to properly constrain height */
-}
-
-.conversation-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 1rem;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  transition: background-color 0.2s;
-  background: var(--bg);
-}
-
-.conversation-item:hover {
-  background: var(--light-gray);
-}
-
-.conversation-item.selected {
-  background: var(--light-pink);
-}
-
-.conversation-left {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.conversation-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.conversation-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.conversation-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  overflow: hidden;
-}
-
-.conversation-name {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: left;
-  min-width: 0;
-}
-
-.conversation-preview {
-  font-size: 0.75rem;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: left;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.conversation-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
-  flex-shrink: 0;
-}
-
-.conversation-time {
-  font-size: 0.75rem;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.conversation-reply-indicators {
-  display: flex;
-  gap: -4px;
-  align-items: center;
-}
-
-.reply-avatar {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 2px solid var(--bg);
-  margin-left: -4px;
-}
-
-.reply-avatar:first-child {
-  margin-left: 0;
-}
-
-.reply-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.conversation-arrow {
-  color: var(--red-accent);
-  display: flex;
-  align-items: center;
-}
-
-.empty-conversations {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  text-align: center;
-  color: var(--muted);
-  height: 100%;
-}
-
-.empty-conversations p {
-  margin: 0.25rem 0;
-}
-
-.empty-hint {
-  font-size: 0.875rem;
-  font-style: italic;
-}
-
 /* Sorting and Filter Dropdown Styles */
 .sort-button-wrapper,
 .filter-button-wrapper,
@@ -1305,6 +1039,9 @@ input {
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
+    touch-action: pan-y; /* Enable vertical scrolling */
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    position: relative; /* Ensure proper positioning context */
   }
 
   .app-container {
@@ -1313,6 +1050,9 @@ input {
     padding: 0;
     margin: 0;
     overflow-x: hidden;
+    touch-action: pan-y; /* Enable vertical scrolling */
+    pointer-events: auto; /* Ensure touch events work */
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
   }
 
   .main-layout {
@@ -1320,58 +1060,8 @@ input {
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
-  }
-
-  .conversation-panel {
-    width: 100% !important;
-    min-width: 100% !important;
-    max-width: 100% !important;
-    height: 100vh;
-    border-right: none;
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1;
-    transition: transform 0.3s ease-in-out;
-  }
-
-  .conversation-panel.mobile-hidden {
-    transform: translateX(-100%);
-    pointer-events: none;
-  }
-
-  .conversation-list {
-    width: 100%;
-    max-width: 100%;
-  }
-
-  .conversation-header {
-    width: 100%;
-    padding: 1rem;
-  }
-
-  .conversations-container {
-    width: 100%;
-  }
-
-  .conversation-item {
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .add-conversation-form {
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .add-form-input {
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .add-form-actions {
-    width: 100%;
-    box-sizing: border-box;
+    touch-action: pan-y; /* Enable vertical scrolling */
+    pointer-events: auto; /* Ensure touch events work */
   }
 
   .chat-panel {
@@ -1383,6 +1073,8 @@ input {
     left: 0;
     z-index: 2;
     transition: transform 0.3s ease-in-out;
+    touch-action: pan-y; /* Enable vertical scrolling */
+    pointer-events: auto; /* Ensure touch events work */
   }
 
   .chat-panel.mobile-hidden {
@@ -1397,6 +1089,8 @@ input {
     flex-direction: column;
     position: relative;
     overflow: hidden;
+    touch-action: pan-y; /* Enable vertical scrolling */
+    pointer-events: auto; /* Ensure touch events work */
   }
 
   .chat-header {
@@ -1451,6 +1145,8 @@ input {
     padding-bottom: 60px; /* message-input-area height + extra padding */
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none; /* Firefox */
+    touch-action: pan-y; /* Enable vertical scrolling on mobile */
+    pointer-events: auto; /* Ensure touch events work */
   }
 
   /* Adjust chat area margin when banner is present */
@@ -1479,6 +1175,39 @@ input {
     ); /* For devices with notch/home indicator */
     max-height: 200px; /* Prevent input area from taking too much space */
     overflow-y: auto;
+    touch-action: pan-y; /* Enable vertical scrolling */
+    pointer-events: auto; /* Ensure touch events work */
+  }
+
+  /* Ensure full-width chat panel works correctly on mobile */
+  .chat-panel.full-width {
+    width: 100% !important;
+    min-width: 100% !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    z-index: 2 !important;
+    pointer-events: auto !important;
+    transform: translateX(0) !important;
+    touch-action: pan-y !important; /* Enable vertical scrolling */
+  }
+
+  /* Ensure buttons and interactive elements work on mobile */
+  button,
+  .btn,
+  .send-button,
+  .attachment-btn,
+  .audio-btn,
+  .message-bubble {
+    touch-action: manipulation; /* Improve touch responsiveness */
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1); /* Subtle tap highlight */
+    cursor: pointer;
+  }
+
+  /* Ensure message bubbles are tappable */
+  .message-bubble {
+    pointer-events: auto;
+    touch-action: manipulation;
   }
 }
 

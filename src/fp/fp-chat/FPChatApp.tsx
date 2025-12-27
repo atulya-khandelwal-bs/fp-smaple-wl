@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import "./FPChatApp.css";
-import FPConversationList from "./components/FPConversationList.tsx";
 import FPChatInterface from "./components/FPChatInterface.tsx";
 import FPCallApp from "../fp-call/FPCallApp.tsx";
 import AgoraChat from "agora-chat";
@@ -11,14 +10,14 @@ import { createMessageHandlers } from "./utils/messageHandlers.ts";
 import { Contact, Message, LogEntry } from "../common/types/chat";
 import { CallEndData } from "../common/types/call";
 import type { MessageBody } from "agora-chat";
-import {
-  fetchDietitianDetails,
-  type DietitianApiResponse,
-} from "./services/dietitianApi";
-// import axios from "axios";
+import { fetchDietitianDetails } from "./services/dietitianApi";
 
 interface FPChatAppProps {
   userId: string;
+  conversationId: string; // Required: the coach/user ID to chat with
+  name?: string; // Optional: the name to display for the conversation
+  profilePhoto?: string; // Optional: the profile photo URL for the conversation
+  designation?: string; // Optional: the designation/title to display (e.g., "Nutritionist", "Coach")
   onLogout?: () => void;
 }
 
@@ -41,22 +40,26 @@ interface IncomingCall {
   callType?: "video" | "audio";
 }
 
-function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
+function FPChatApp({
+  userId,
+  conversationId,
+  name,
+  profilePhoto,
+  designation,
+  onLogout,
+}: FPChatAppProps): React.JSX.Element {
   const [token, setToken] = useState<string | undefined>(undefined);
   const [isGeneratingToken, setIsGeneratingToken] = useState<boolean>(false);
   const appKey = config.agora.appKey;
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [conversations, setConversations] = useState<Contact[]>([]);
   const [peerId, setPeerId] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [logs, setLogs] = useState<(string | LogEntry)[]>([]);
-  const [isMobileView, setIsMobileView] = useState<boolean>(false);
-  const [showChatOnMobile, setShowChatOnMobile] = useState<boolean>(false);
 
   // Call state management
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
-  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  const [_incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
 
   // Scheduled call from API
   const [scheduledCallFromApi, setScheduledCallFromApi] = useState<{
@@ -76,6 +79,8 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
   const processedMessageIdsRef = useRef<Set<string>>(new Set());
   // 🔹 Track last poll time to avoid too frequent polling
   const lastPollTimeRef = useRef<number>(0);
+  // 🔹 Track if direct chat has been initialized to prevent multiple initializations
+  const directChatInitializedRef = useRef<boolean>(false);
 
   const addLog = (log: string | LogEntry): void =>
     setLogs((prev) => {
@@ -177,7 +182,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
                 schedule_call_id: scheduledSlot.schedule_call_id,
                 call_type: "video", // Default to video, will be updated when scheduling
               };
-              console.log("Scheduled call found:", foundScheduledSlot);
               break; // Found first scheduled slot, exit
             }
           }
@@ -205,7 +209,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
 
     // Poll every 10 seconds to check for scheduled call updates
     const pollInterval = setInterval(() => {
-      console.log("🔄 Polling for scheduled call updates...");
       fetchScheduledCall();
     }, 10000); // Poll every 10 seconds
 
@@ -223,36 +226,15 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     setIncomingCall(callData);
   };
 
-  // // Handle presence status updates
-  // const handlePresenceStatus = (presenceData: {
-  //   userId: string;
-  //   description: string;
-  // }): void => {
-  //   // Show notification when peer is waiting in call
-  //   if (
-  //     presenceData.description === "waiting" &&
-  //     presenceData.userId === peerId
-  //   ) {
-  //     addLog(`🟡 ${presenceData.userId} is waiting for you in the call!`);
-  //     // You can add a toast notification here if needed
-  //   } else if (
-  //     presenceData.description === "in_call" &&
-  //     presenceData.userId === peerId
-  //   ) {
-  //     addLog(`🟢 ${presenceData.userId} joined the call`);
-  //   }
-  // };
-
   // Create handlers - they will use clientRefForHandlers.current
   const handlers = createMessageHandlers({
     userId,
     setIsLoggedIn,
     setIsLoggingIn: () => {}, // Not used in chat app, login handled by parent
     addLog,
-    setConversations,
+    setConversations: () => {}, // Not used - conversation list removed
     generateNewToken,
     handleIncomingCall,
-    // onPresenceStatus: handlePresenceStatus,
     get clientRef() {
       return clientRefForHandlers;
     },
@@ -284,6 +266,70 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       }
     }
   }, [userId, token, isLoggedIn, clientRef]);
+
+  // Initialize direct chat mode: always open chat interface with the conversationId
+  useEffect(() => {
+    const initializeDirectChat = async (): Promise<void> => {
+      try {
+        addLog(
+          `Initializing direct chat with conversation ID: ${conversationId}`
+        );
+
+        // Create a contact object from conversationId and provided name/profilePhoto/designation
+        // The conversationId is the coach/user ID to chat with
+        const contact: Contact = {
+          id: String(conversationId),
+          name: name || `User ${conversationId}`, // Use provided name or default
+          avatar: profilePhoto || config.defaults.avatar, // Use provided photo or default
+          description: designation, // Store designation in description field
+          lastMessage: undefined,
+          timestamp: null,
+          lastMessageFrom: null,
+        };
+
+        // If already initialized, just update the contact info (name/avatar/designation)
+        if (directChatInitializedRef.current && selectedContact) {
+          setSelectedContact({
+            ...selectedContact,
+            name: contact.name,
+            avatar: contact.avatar,
+            description: contact.description,
+          });
+          return;
+        }
+
+        // Generate token if not already available
+        if (!token && !isLoggedIn) {
+          const newToken = await ensureToken();
+          if (!newToken) {
+            addLog("Failed to generate token. Cannot connect to chat.");
+            console.error("Failed to generate token. Cannot connect to chat.");
+            return;
+          }
+        }
+
+        // Register the user if not already registered
+        await registerUser(contact.id);
+
+        // Set selected contact and peerId to open chat interface
+        setSelectedContact(contact);
+        setPeerId(contact.id);
+
+        // Mark as initialized to prevent re-initialization
+        directChatInitializedRef.current = true;
+
+        addLog(`Direct chat initialized with ${contact.id}`);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        addLog(`Error initializing direct chat: ${errorMessage}`);
+        console.error("Error initializing direct chat:", error);
+      }
+    };
+
+    initializeDirectChat();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, userId, name, profilePhoto, designation]);
 
   // Internal function to generate token for the coach
   const generateToken = async (): Promise<string | null> => {
@@ -339,95 +385,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
   // Note: userId is now a patient, not a coach
   // coachInfo is not needed for patients - it will be set when a coach is selected
 
-  // Detect mobile view
-  useEffect(() => {
-    const checkMobile = (): void => {
-      // Don't update mobile view state if there's an active call (video or audio)
-      // This prevents re-renders that could affect the call and cause token regeneration
-      if (activeCall) {
-        return;
-      }
-      setIsMobileView(window.innerWidth <= 768);
-    };
-
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, [activeCall]);
-
-  // Reset mobile chat view when contact is deselected
-  useEffect(() => {
-    if (!selectedContact && showChatOnMobile) {
-      setShowChatOnMobile(false);
-    }
-  }, [selectedContact, showChatOnMobile]);
-
-  // Fetch coaches from API when userId (patient) is available
-  useEffect(() => {
-    const fetchCoaches = async (): Promise<void> => {
-      if (!userId) {
-        return;
-      }
-
-      try {
-        addLog(`Fetching coaches for patient ${userId}...`);
-
-        const response = await fetch(config.api.fetchCoaches);
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch coaches: ${response.status}`);
-        }
-
-        const data = (await response.json()) as {
-          coaches?: Array<{
-            coachId: string | number;
-            coachName?: string;
-            coachPhoto?: string;
-          }>;
-          count?: number;
-        };
-        const apiCoaches = data.coaches || [];
-
-        // Filter out recorder (UID 999999999) from coaches
-        const filteredCoaches = apiCoaches.filter(
-          (coach) => String(coach.coachId) !== "999999999"
-        );
-
-        // Map API response to app contact format (no preview messages)
-        const mappedCoaches = filteredCoaches.map(
-          (coach: {
-            coachId: string | number;
-            coachName?: string;
-            coachPhoto?: string;
-          }) => {
-            return {
-              id: String(coach.coachId), // Use coachId as Agora ID (string)
-              name: coach.coachName || `Coach ${coach.coachId}`,
-              avatar: coach.coachPhoto || config.defaults.avatar,
-              // No lastMessage, timestamp, or preview for coaches
-              lastMessage: undefined,
-              timestamp: null,
-              lastMessageFrom: null,
-            };
-          }
-        );
-
-        setConversations(mappedCoaches);
-        addLog(`Loaded ${mappedCoaches.length} coach(es) from API`);
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        addLog(`Error fetching coaches: ${errorMessage}`);
-        console.error("Error fetching coaches:", error);
-        // Set empty array on error to prevent retry loop
-        setConversations([]);
-      }
-    };
-
-    fetchCoaches();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
   // Poll for recent messages to catch backend-sent messages that might not trigger handlers
   useEffect(() => {
     if (!peerId || !clientRef.current || !isLoggedIn) {
@@ -436,10 +393,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
 
     // Clear processed message IDs when peerId changes to start fresh
     processedMessageIdsRef.current.clear();
-    console.log(
-      "🔄 [Polling] Cleared processed message IDs for new peer:",
-      peerId
-    );
 
     const POLL_INTERVAL = 3000; // Poll every 3 seconds
     const MIN_POLL_INTERVAL = 1000; // Minimum 1 second between polls
@@ -523,10 +476,7 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
           if (isAlreadyProcessed) {
             // Message is already processed (likely from fetchInitialMessages)
             // Skip it to prevent duplicates
-            console.log(
-              "⏭️ [Polling] Message already processed, skipping:",
-              messageId
-            );
+
             return;
           }
 
@@ -558,10 +508,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
 
             // This is a new message that wasn't caught by handlers
             // Process it through the handlers manually
-            console.log(
-              "🔄 [Polling] Found new message not in logs, processing:",
-              messageId
-            );
 
             // Trigger the appropriate handler based on message type
             if (latestMessage.type === "custom" && handlers.onCustomMessage) {
@@ -611,13 +557,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
       const endpoint = config.api.registerUserEndpoint;
       const requestBody = { username: username };
 
-      // console.log("🔵 [REGISTER API] Calling registration API:", {
-      //   endpoint,
-      //   method: "POST",
-      //   body: requestBody,
-      //   timestamp: new Date().toISOString(),
-      // });
-
       addLog(`Registering user ${username}...`);
 
       const registerResponse = await fetch(endpoint, {
@@ -628,39 +567,21 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
         body: JSON.stringify(requestBody),
       });
 
-      // console.log("🟢 [REGISTER API] Response received:", {
-      //   status: registerResponse.status,
-      //   statusText: registerResponse.statusText,
-      //   ok: registerResponse.ok,
-      //   url: registerResponse.url,
-      // });
-
       if (registerResponse.ok) {
-        // const responseData = await registerResponse.json().catch(() => ({}));
-        // console.log("✅ [REGISTER API] Registration successful:", responseData);
         await registerResponse.json().catch(() => ({})); // Consume response body
         addLog(`User ${username} registered successfully`);
         return true;
       } else {
         // User might already be registered
         const errorData = await registerResponse.json().catch(() => ({}));
-        // console.log("⚠️ [REGISTER API] Registration response (not ok):", {
-        //   status: registerResponse.status,
-        //   errorData,
-        // });
 
         if (
           registerResponse.status === 400 ||
           registerResponse.status === 409
         ) {
-          // console.log("ℹ️ [REGISTER API] User already exists, proceeding...");
           addLog(`User ${username} already exists, proceeding...`);
           return true; // User exists, can proceed
         } else {
-          // console.warn("❌ [REGISTER API] Registration failed:", {
-          //   status: registerResponse.status,
-          //   error: errorData.error || registerResponse.status,
-          // });
           addLog(
             `Registration warning: ${
               errorData.error || registerResponse.status
@@ -689,7 +610,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     }
     setIsLoggedIn(false);
     setSelectedContact(null);
-    setConversations([]);
     setPeerId("");
     setMessage("");
     // Call parent's logout handler if provided
@@ -698,103 +618,10 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     }
   };
 
-  const handleSelectContact = async (contact: Contact): Promise<void> => {
-    // console.log("👤 [USER SELECTION] User selected:", {
-    //   contactId: contact.id,
-    //   contactName: contact.name,
-    //   timestamp: new Date().toISOString(),
-    // });
-
-    // Generate token if not already available
-    if (!token && !isLoggedIn) {
-      const newToken = await ensureToken();
-      if (!newToken) {
-        addLog("Failed to generate token. Cannot connect to chat.");
-        console.log("Failed to generate token. Cannot connect to chat.");
-        return;
-      }
-    }
-
-    console.log("🔵 [USER SELECTION] Token:", token);
-
-    // Don't allow selecting recorder (UID 999999999) as a contact
-    if (String(contact.id) === "999999999") {
-      console.log("🚫 Cannot select recorder (UID: 999999999) as contact");
-      return;
-    }
-
-    // Register the user if not already registered
-    await registerUser(contact.id);
-
-    setSelectedContact(contact);
-    setPeerId(contact.id);
-    // setPeerId("1941");
-
-    // Update conversation in list or add if new (don't update timestamp on selection)
-    setConversations((prev) => {
-      const existing = prev.find((c) => c.id === contact.id);
-      if (existing) {
-        return prev.map((c) =>
-          c.id === contact.id ? { ...c, ...contact } : c
-        );
-      }
-      return [
-        ...prev,
-        {
-          ...contact,
-          lastMessage: "",
-          timestamp: new Date(),
-          avatar:
-            contact.avatar ||
-            "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face",
-        },
-      ];
-    });
-  };
-
-  const handleAddConversation = (contact: Contact): void => {
-    // Don't allow adding recorder (UID 999999999) as a conversation
-    if (String(contact.id) === "999999999") {
-      console.log("🚫 Cannot add recorder (UID: 999999999) as conversation");
-      return;
-    }
-
-    const newConversation = {
-      ...contact,
-      lastMessage: "",
-      timestamp: new Date(),
-      avatar:
-        contact.avatar ||
-        "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face",
-      replyCount: 0,
-    };
-    setConversations((prev) => [newConversation, ...prev]);
-    // Optionally auto-select the new conversation
-    // handleSelectContact(newConversation);
-  };
-
-  const handleSelectConversation = async (
-    conversation: Contact
-  ): Promise<void> => {
-    await handleSelectContact(conversation);
-    // On mobile, show chat view when conversation is selected
-    if (isMobileView) {
-      setShowChatOnMobile(true);
-    }
-  };
-
-  const handleBackToConversations = (): void => {
-    setSelectedContact(null);
-    setPeerId("");
-    setMessage("");
-    setShowChatOnMobile(false);
-  };
-
   // Handle call initiation (video or audio)
   const handleInitiateCall = async (
     callType: "video" | "audio" = "video"
   ): Promise<void> => {
-    console.log("handleInitiateCall", callType);
     if (!peerId || !userId) {
       addLog("Cannot initiate call: Missing user or peer ID");
       return;
@@ -836,7 +663,7 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
   const handleScheduleCall = async (
     date: Date,
     time: string,
-    topic: string,
+    _topic: string,
     callType: "video" | "audio" = "video"
   ): Promise<void> => {
     if (!selectedContact) {
@@ -891,10 +718,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
                 schedule_call_id: scheduledSlot.schedule_call_id,
                 call_type: callType, // Store the call type from scheduling
               };
-              console.log(
-                "Scheduled call updated after scheduling:",
-                foundScheduledSlot
-              );
               break; // Found first scheduled slot, exit
             }
           }
@@ -907,59 +730,12 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     }
   };
 
-  // Handle accept call
-  // @ts-expect-error - May be used in future for incoming call handling
-  const _handleAcceptCall = (): void => {
-    if (!incomingCall) return;
-
-    // Reset call end message sent flag for accepted call
-    callEndMessageSentRef.current = false;
-
-    // Find the contact from conversations
-    const contact = conversations.find((c) => c.id === incomingCall.from);
-
-    setActiveCall({
-      userId,
-      peerId: incomingCall.from,
-      channel: incomingCall.channel,
-      isInitiator: false,
-      callType: incomingCall.callType || "video", // Default to video if not specified
-      localUserName: userId, // You can get actual name from user profile if available
-      localUserPhoto: undefined, // Local user photo - can be fetched from user profile if available
-      peerName: contact?.name || incomingCall.from,
-      peerAvatar: contact?.avatar,
-    });
-    setIncomingCall(null);
-  };
-
-  // function formatDurationFromSeconds(totalSeconds: number): string {
-  //   const hours = Math.floor(totalSeconds / 3600);
-  //   const minutes = Math.floor((totalSeconds % 3600) / 60);
-  //   const seconds = totalSeconds % 60;
-
-  //   const parts = [];
-
-  //   if (hours > 0) parts.push(`${hours} hr${hours > 1 ? "s" : ""}`);
-  //   if (minutes > 0) parts.push(`${minutes} min${minutes > 1 ? "s" : ""}`);
-  //   if (seconds > 0 || parts.length === 0)
-  //     parts.push(`${seconds} sec${seconds > 1 ? "s" : ""}`);
-
-  //   return parts.join(" ");
-  // }
-
-  // Handle reject call
-  // @ts-expect-error - May be used in future for incoming call handling
-  const _handleRejectCall = (): void => {
-    setIncomingCall(null);
-  };
-
   // Handle end call
   const handleEndCall = async (
     callInfo: CallEndData | null = null
   ): Promise<void> => {
     // Prevent duplicate call end messages
     if (callEndMessageSentRef.current) {
-      console.log("📞 Call End Message - Already sent, skipping duplicate");
       // Clear call state even if message was already sent
       setActiveCall(null);
       setIncomingCall(null);
@@ -968,104 +744,11 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     }
 
     if (!activeCall || !callInfo) {
-      console.log("📞 Call End Message - NOT sending (missing data):", {
-        hasCallInfo: !!callInfo,
-        hasActiveCall: !!activeCall,
-      });
       setActiveCall(null);
       setIncomingCall(null);
       setMessage("");
       return;
     }
-
-    // const bothUsersConnected = callInfo.bothUsersConnected === true;
-
-    // // Calculate duration - use provided duration or calculate from timestamps
-    // let duration = callInfo.duration || 0;
-    // if (duration <= 0 && callInfo.callStartTime && callInfo.callEndTime) {
-    //   duration = Math.floor(
-    //     (callInfo.callEndTime - callInfo.callStartTime) / 1000
-    //   );
-    // }
-
-    // Ensure duration is at least 0 (not negative)
-    // duration = Math.max(0, duration);
-
-    // if (!bothUsersConnected || duration <= 0) {
-    //   console.log("📞 Call End Message - NOT sending (conditions not met):", {
-    //     bothUsersConnected,
-    //     duration,
-    //   });
-    //   addLog(
-    //     "Call ended without other user joining. Not sending call summary to backend."
-    //   );
-    //   setActiveCall(null);
-    //   setIncomingCall(null);
-    //   setMessage("");
-    //   return;
-    // }
-
-    // try {
-    // // Determine message type and title based on call type
-    // const isVideoCall = activeCall.callType === "video";
-    // const messageType = isVideoCall ? "video_call" : "voice_call";
-    // const callTitle = isVideoCall ? "Video call" : "Voice call";
-
-    // // Send call end message with duration
-    // const payload = {
-    //   title: callTitle,
-    //   description: `${formatDurationFromSeconds(duration)}`,
-    //   icons_details: {
-    //     left_icon: "",
-    //     right_icon: "",
-    //   },
-    //   call_details: {
-    //     call_url: "",
-    //   },
-    //   redirection_details: [],
-    // };
-
-    // const body = {
-    //   from: userId,
-    //   to: peerId,
-    //   type: messageType,
-    //   data: payload,
-    // };
-
-    // try {
-    //   const response = await axios.post(config.api.customMessage, body);
-    //   console.log(`${callTitle} message sent successfully:`, response.data);
-
-    //   // Mark call end message as sent to prevent duplicates
-    //   callEndMessageSentRef.current = true;
-
-    //   // Add message directly to logs for real-time display
-    //   if (addLog) {
-    //     const messageToLog = JSON.stringify({
-    //       type: messageType,
-    //       ...payload,
-    //     });
-    //     addLog({
-    //       log: `You → ${peerId}: ${messageToLog}`,
-    //       timestamp: new Date(),
-    //     });
-    //   }
-    // } catch (error) {
-    //   console.error(
-    //     `Error sending ${callTitle.toLowerCase()} message:`,
-    //     error
-    //   );
-    // }
-
-    // addLog(`${callTitle} ended. Duration: ${duration}s`);
-    // } catch (error) {
-    //   console.error("Error sending call end message:", error);
-    //   const errorMessage =
-    //     error instanceof Error ? error.message : String(error);
-    //   addLog(`Failed to send call end message: ${errorMessage}`);
-    //   // Reset flag on error so it can be retried if needed
-    //   callEndMessageSentRef.current = false;
-    // }
 
     // Clear call state
     setActiveCall(null);
@@ -1074,214 +757,12 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
     setMessage("");
   };
 
-  // Helper function to generate preview from a formatted message object
-  const generatePreviewFromMessage = (
-    formattedMsg: Message | null | undefined
-  ): string => {
-    if (!formattedMsg) return "";
-
-    // Handle different message types
-    if (formattedMsg.messageType === "image") {
-      return "Photo";
-    } else if (formattedMsg.messageType === "file") {
-      return formattedMsg.fileName ? `📎 ${formattedMsg.fileName}` : "File";
-    } else if (formattedMsg.messageType === "audio") {
-      return "Audio";
-    } else if (formattedMsg.messageType === "call") {
-      // Convert old "call" format to new format for preview
-      return formattedMsg.callType === "audio" ? "Voice call" : "Video call";
-    } else if (formattedMsg.messageType === "general_notification") {
-      return formattedMsg.system?.payload?.title || "Notification";
-    } else if (formattedMsg.messageType === "video_call") {
-      return formattedMsg.system?.payload?.title || "Video call";
-    } else if (formattedMsg.messageType === "voice_call") {
-      return formattedMsg.system?.payload?.title || "Voice call";
-    } else if (formattedMsg.messageType === "documents") {
-      return (
-        formattedMsg.system?.payload?.title ||
-        formattedMsg.fileName ||
-        "Document"
-      );
-    } else if (formattedMsg.messageType === "call_scheduled") {
-      const time = formattedMsg.system?.payload?.time as number | undefined;
-      if (time) {
-        const scheduledDate = new Date(time * 1000); // Convert seconds to milliseconds
-        // Format date as "11 Aug 10:00 am" (12-hour format with AM/PM)
-        const formatScheduledDate = (date: Date): string => {
-          const day = date.getDate();
-          const monthNames = [
-            "Jan",
-            "Feb",
-            "Mar",
-            "Apr",
-            "May",
-            "Jun",
-            "Jul",
-            "Aug",
-            "Sep",
-            "Oct",
-            "Nov",
-            "Dec",
-          ];
-          const month = monthNames[date.getMonth()];
-          let hours = date.getHours();
-          const minutes = date.getMinutes();
-          const ampm = hours >= 12 ? "pm" : "am";
-          hours = hours % 12;
-          hours = hours ? hours : 12; // the hour '0' should be '12'
-          const minutesStr = minutes < 10 ? `0${minutes}` : minutes;
-          return `${day} ${month} ${hours}:${minutesStr} ${ampm}`;
-        };
-        return `Schedule, ${formatScheduledDate(scheduledDate)}`;
-      }
-      return "Call scheduled";
-    } else if (formattedMsg.messageType === "scheduled_call_canceled") {
-      return "Scheduled call cancelled";
-    } else if (formattedMsg.messageType === "text") {
-      // For text messages, try to parse if it's JSON (custom message)
-      try {
-        const parsed = JSON.parse(formattedMsg.content);
-        if (parsed && typeof parsed === "object" && "type" in parsed) {
-          const parsedObj = parsed as {
-            type?: string;
-            fileName?: string;
-            callType?: string;
-            title?: string;
-          };
-          const t = String(parsedObj.type).toLowerCase();
-          if (t === "image") return "Photo";
-          if (t === "file")
-            return parsedObj.fileName ? `📎 ${parsedObj.fileName}` : "File";
-          if (t === "audio") return "Audio";
-          if (t === "meal_plan_updated") return "Meal plan updated";
-          if (t === "new_nutritionist" || t === "new_nutrionist")
-            return "New nutritionist assigned";
-          if (t === "products") return "Products";
-          if (t === "call")
-            return `${parsedObj.callType === "video" ? "Video" : "Audio"} call`;
-          if (t === "general_notification" || t === "general-notification")
-            return parsedObj.title || "Notification";
-          if (t === "video_call") return parsedObj.title || "Video call";
-          if (t === "voice_call") return parsedObj.title || "Voice call";
-          if (t === "documents") return parsedObj.title || "Document";
-        }
-      } catch {
-        // Not JSON, use content as-is
-      }
-      return formattedMsg.content || "";
-    }
-
-    // Fallback
-    return formattedMsg.content || "Message";
-  };
-
   // Function to update conversation's last message from history
   const updateLastMessageFromHistory = (
-    peerId: string,
-    formattedMsg: Message
+    _peerId: string,
+    _formattedMsg: Message
   ): void => {
-    if (!peerId || !formattedMsg) return;
-
-    const preview = generatePreviewFromMessage(formattedMsg);
-    const timestamp = formattedMsg.createdAt
-      ? new Date(formattedMsg.createdAt)
-      : new Date();
-    const lastMessageFrom = formattedMsg.sender || peerId;
-
-    // Normalize: try both with and without user_ prefix
-    const normalizedPeerId = peerId.startsWith("user_")
-      ? peerId
-      : `user_${peerId}`;
-    const normalizedPeerIdWithoutPrefix = peerId.startsWith("user_")
-      ? peerId.replace("user_", "")
-      : peerId;
-
-    console.log(
-      "🔄 [updateLastMessageFromHistory] Updating conversation preview:",
-      {
-        peerId,
-        normalizedPeerId,
-        normalizedPeerIdWithoutPrefix,
-        preview,
-        timestamp: timestamp.toISOString(),
-        lastMessageFrom,
-      }
-    );
-
-    setConversations((prev) => {
-      // Find conversation by matching either format
-      const existing = prev.find(
-        (c) =>
-          c.id === peerId ||
-          c.id === normalizedPeerId ||
-          c.id === normalizedPeerIdWithoutPrefix ||
-          c.id === `user_${normalizedPeerIdWithoutPrefix}`
-      );
-
-      console.log(
-        "🔄 [updateLastMessageFromHistory] Conversation search result:",
-        {
-          existing: existing
-            ? { id: existing.id, lastMessage: existing.lastMessage }
-            : null,
-          allConversationIds: prev.map((c) => c.id),
-        }
-      );
-
-      if (existing) {
-        // Use the existing conversation ID format
-        const conversationId = existing.id;
-
-        // Only update if history message is more recent than existing last message
-        // or if there's no existing last message
-        const existingTimestamp = existing.timestamp
-          ? new Date(existing.timestamp)
-          : null;
-        const shouldUpdate =
-          !existingTimestamp ||
-          timestamp.getTime() >= existingTimestamp.getTime();
-
-        console.log("🔄 [updateLastMessageFromHistory] Update check:", {
-          conversationId,
-          shouldUpdate,
-          existingTimestamp: existingTimestamp?.toISOString(),
-          newTimestamp: timestamp.toISOString(),
-          timestampComparison: existingTimestamp
-            ? timestamp.getTime() >= existingTimestamp.getTime()
-            : "no existing timestamp",
-        });
-
-        if (shouldUpdate) {
-          const updated = prev.map((conv) => {
-            if (conv.id !== conversationId) return conv;
-            return {
-              ...conv,
-              lastMessage: preview,
-              timestamp: timestamp,
-              lastMessageFrom: lastMessageFrom,
-            };
-          });
-          console.log(
-            "✅ [updateLastMessageFromHistory] Conversation updated:",
-            {
-              conversationId,
-              newLastMessage: preview,
-              updatedConversation: updated.find((c) => c.id === conversationId),
-            }
-          );
-          return updated;
-        } else {
-          console.log(
-            "⚠️ [updateLastMessageFromHistory] Not updating - message is not more recent"
-          );
-        }
-      } else {
-        console.warn(
-          "⚠️ [updateLastMessageFromHistory] Conversation not found, cannot update preview"
-        );
-      }
-      return prev;
-    });
+    // Conversation list removed - no need to update conversation preview
   };
 
   const handleSendMessage = async (
@@ -1535,15 +1016,10 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
             send: (msg: unknown) => Promise<{ serverMsgId?: string }>;
           }
         ).send(msg);
-        console.log("Response", response);
 
         // Capture serverMsgId from response for message editing
         const serverMsgId = (response as { serverMsgId?: string })?.serverMsgId;
         if (serverMsgId) {
-          console.log(
-            "✅ [handleSendMessage] Server message ID received:",
-            serverMsgId
-          );
           // Add serverMsgId to the log entry so it can be used when creating messages
           addLog({
             log: `You → ${peerId}: ${messageString}`,
@@ -1558,143 +1034,8 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
         // If send failed, still add to log
         addLog(`You → ${peerId}: ${messageString}`);
       }
-      console.log("Message sent successfully", msg);
 
-      // Generate preview for conversation list
-      let preview = messageString;
-      if (isCustomMessage && parsedPayload) {
-        const t = String(parsedPayload.type).toLowerCase();
-        if (t === "image") preview = "Photo";
-        else if (t === "file")
-          preview = parsedPayload.fileName
-            ? `📎 ${parsedPayload.fileName}`
-            : "File";
-        else if (t === "audio") preview = "Audio";
-        else if (t === "meal_plan_updated" || t === "meal_plan_update")
-          preview = "Meal plan updated";
-        else if (
-          t === "new_nutritionist" ||
-          t === "new_nutrionist" ||
-          t === "coach_assigned" ||
-          t === "coach_details"
-        )
-          preview =
-            (parsedPayload.title as string) ||
-            (parsedPayload.name as string) ||
-            "New nutritionist assigned";
-        else if (t === "products" || t === "recommended_products")
-          preview = "Products";
-        else if (t === "call")
-          preview = `${
-            parsedPayload.callType === "video" ? "Video" : "Audio"
-          } call`;
-        else if (t === "general_notification" || t === "general-notification")
-          preview = (parsedPayload.title as string) || "Notification";
-        else if (t === "video_call")
-          preview = (parsedPayload.title as string) || "Video call";
-        else if (t === "voice_call")
-          preview = (parsedPayload.title as string) || "Voice call";
-        else if (t === "documents")
-          preview = (parsedPayload.title as string) || "Document";
-        else if (t === "call_scheduled") {
-          const time = parsedPayload.time as number | undefined;
-          if (time) {
-            const scheduledDate = new Date(time * 1000); // Convert seconds to milliseconds
-            // Import formatScheduledDate function
-            const formatScheduledDate = (date: Date): string => {
-              const day = date.getDate();
-              const monthNames = [
-                "Jan",
-                "Feb",
-                "Mar",
-                "Apr",
-                "May",
-                "Jun",
-                "Jul",
-                "Aug",
-                "Sep",
-                "Oct",
-                "Nov",
-                "Dec",
-              ];
-              const month = monthNames[date.getMonth()];
-              let hours = date.getHours();
-              const minutes = date.getMinutes();
-              const ampm = hours >= 12 ? "pm" : "am";
-              hours = hours % 12;
-              hours = hours ? hours : 12; // the hour '0' should be '12'
-              const minutesStr = minutes < 10 ? `0${minutes}` : minutes;
-              return `${day} ${month} ${hours}:${minutesStr} ${ampm}`;
-            };
-            preview = `Schedule, ${formatScheduledDate(scheduledDate)}`;
-          } else {
-            preview = "Call scheduled";
-          }
-        } else if (t === "scheduled_call_canceled")
-          preview = "Scheduled call cancelled";
-      }
-
-      // Note: Log is already added above with serverMsgId if available from send response
-
-      // Update conversation with last message - normalize conversation ID matching
-      // Normalize: try both with and without user_ prefix
-      const normalizedPeerId = peerId.startsWith("user_")
-        ? peerId
-        : `user_${peerId}`;
-      const normalizedPeerIdWithoutPrefix = peerId.startsWith("user_")
-        ? peerId.replace("user_", "")
-        : peerId;
-
-      console.log("📤 [handleSendMessage] Updating conversation preview:", {
-        peerId,
-        normalizedPeerId,
-        normalizedPeerIdWithoutPrefix,
-        preview,
-      });
-
-      setConversations((prev) => {
-        // Find conversation by matching either format
-        const existing = prev.find(
-          (c) =>
-            c.id === peerId ||
-            c.id === normalizedPeerId ||
-            c.id === normalizedPeerIdWithoutPrefix ||
-            c.id === `user_${normalizedPeerIdWithoutPrefix}`
-        );
-
-        console.log("📤 [handleSendMessage] Conversation search result:", {
-          existing: existing
-            ? { id: existing.id, lastMessage: existing.lastMessage }
-            : null,
-          allConversationIds: prev.map((c) => c.id),
-        });
-
-        if (existing) {
-          // Use the existing conversation ID format
-          const conversationId = existing.id;
-          const updated = prev.map((conv) =>
-            conv.id === conversationId
-              ? {
-                  ...conv,
-                  lastMessage: preview,
-                  timestamp: new Date(),
-                  lastMessageFrom: userId, // Current user sent the last message
-                }
-              : conv
-          );
-          console.log("✅ [handleSendMessage] Conversation updated:", {
-            conversationId,
-            newLastMessage: preview,
-            updatedConversation: updated.find((c) => c.id === conversationId),
-          });
-          return updated;
-        }
-        // If conversation doesn't exist, create it (shouldn't happen, but handle gracefully)
-        console.warn(
-          "⚠️ [handleSendMessage] Conversation not found, cannot update preview"
-        );
-        return prev;
-      });
+      // Conversation list removed - no need to generate preview or update conversation
 
       // Force a small delay to ensure state update propagates
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1746,26 +1087,8 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
   return (
     <div className="app-container">
       <div className="main-layout">
-        {/* Conversation List - show on desktop always, on mobile only when not showing chat */}
-        <div
-          className={`conversation-panel ${
-            isMobileView && showChatOnMobile ? "mobile-hidden" : ""
-          }`}
-        >
-          <FPConversationList
-            conversations={conversations}
-            selectedConversation={selectedContact}
-            onSelectConversation={handleSelectConversation}
-            userId={userId}
-            onAddConversation={handleAddConversation}
-          />
-        </div>
-        {/* Chat Panel - show on desktop always, on mobile only when showing chat */}
-        <div
-          className={`chat-panel ${
-            isMobileView && !showChatOnMobile ? "mobile-hidden" : ""
-          }`}
-        >
+        {/* Chat Panel - always full width, no conversation list */}
+        <div className="chat-panel full-width">
           {selectedContact ? (
             isChatConnecting ? (
               <div className="chat-loading-container">
@@ -1788,9 +1111,7 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
                 logs={logs}
                 selectedContact={selectedContact}
                 chatClient={clientRef.current}
-                onBackToConversations={
-                  isMobileView ? handleBackToConversations : null
-                }
+                onBackToConversations={null}
                 onInitiateCall={handleInitiateCall}
                 onSchedule={handleScheduleCall}
                 onUpdateLastMessageFromHistory={updateLastMessageFromHistory}
@@ -1799,16 +1120,6 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
                   messageIds.forEach((id) => {
                     processedMessageIdsRef.current.add(id);
                   });
-                  console.log(
-                    "✅ [FPChatApp] Marked messages from history as processed:",
-                    messageIds.length,
-                    "IDs:",
-                    messageIds.slice(0, 5) // Log first 5 IDs for debugging
-                  );
-                  console.log(
-                    "📊 [FPChatApp] Total processed message IDs:",
-                    processedMessageIdsRef.current.size
-                  );
                 }}
                 coachInfo={{ coachName: "", profilePhoto: "" }}
                 scheduledCallFromApi={scheduledCallFromApi}
@@ -1816,11 +1127,9 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
               />
             )
           ) : (
-            <div className="no-conversation-selected">
-              <div className="empty-state">
-                <h2>Welcome, {userId}!</h2>
-                <p>Select a conversation from the list to start chatting</p>
-              </div>
+            <div className="chat-loading-container">
+              <div className="chat-loading-spinner" />
+              <div className="chat-loading-text">Initializing chat...</div>
             </div>
           )}
         </div>
@@ -1830,21 +1139,3 @@ function FPChatApp({ userId, onLogout }: FPChatAppProps): React.JSX.Element {
 }
 
 export default FPChatApp;
-
-/*
- for presence:
-  const Presenceoptions = {
-        description: "in_call",
-        userId: 444,
-      };
-
-      clientRef.current
-        .publishPresence(Presenceoptions)
-        .then((res) => {
-          console.log("prseence msg sent");
-          console.log(res);
-        })
-        .catch((e) => {
-          console.log("err: ", e);
-        });
-*/

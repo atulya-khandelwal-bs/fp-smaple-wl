@@ -33,11 +33,16 @@ export default function FPProfileModal({
     useState<DietitianApiResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState<boolean>(true);
+  const [imageError, setImageError] = useState<boolean>(false);
 
   // Fetch dietitian details when modal opens
   useEffect(() => {
     if (isOpen && selectedContact) {
       loadDietitianDetails();
+      // Reset image loading state when modal opens
+      setImageLoading(true);
+      setImageError(false);
     }
   }, [isOpen, selectedContact]);
 
@@ -67,13 +72,13 @@ export default function FPProfileModal({
   // Format scheduled date and time from scheduledCallFromApi
   const formatScheduledDateTime = (): string => {
     if (!scheduledCallFromApi) return "";
-    
+
     const scheduledDate = new Date(scheduledCallFromApi.call_date_time * 1000);
     const now = new Date();
-    
+
     // Only show if scheduled time is in the future
     if (scheduledDate <= now) return "";
-    
+
     const monthNames = [
       "Jan",
       "Feb",
@@ -99,7 +104,7 @@ export default function FPProfileModal({
 
     return `${day} ${month}, ${year} ${displayHours}:${displayMinutes} ${period}`;
   };
-  
+
   // Check if there's a valid scheduled call (exists and is in the future)
   // Must match the same validation as getScheduledCall() in FPChatInterface
   const hasScheduledCall = (): boolean => {
@@ -115,6 +120,38 @@ export default function FPProfileModal({
     const now = new Date();
     return scheduledDate > now;
   };
+
+  // Get profile photo URL from API or selectedContact
+  const getProfilePhotoUrl = (): string | null => {
+    // First try to get from API response
+    const apiPhoto = dietitianData?.result?.dietitian_details?.dietitian_photo;
+    if (apiPhoto && apiPhoto.trim() !== "" && apiPhoto !== "image_url") {
+      return apiPhoto;
+    }
+
+    // Fallback to selectedContact avatar
+    if (
+      selectedContact?.avatar &&
+      selectedContact.avatar.trim() !== "" &&
+      selectedContact.avatar !== "image_url"
+    ) {
+      return selectedContact.avatar;
+    }
+
+    return null;
+  };
+
+  const profilePhotoUrl = getProfilePhotoUrl();
+  // Show loader if:
+  // 1. API is still loading, OR
+  // 2. We have a photo URL but image is still loading, OR
+  // 3. We have a photo URL but image failed to load (show loader as fallback), OR
+  // 4. We don't have a photo URL and API is done loading (no photo available from API)
+  const shouldShowLoader =
+    loading ||
+    (profilePhotoUrl
+      ? imageLoading || imageError
+      : !loading && !error && !profilePhotoUrl);
 
   return (
     <>
@@ -177,7 +214,7 @@ export default function FPProfileModal({
           </button>
         </div>
 
-        {/* Profile Icon with Loading Spinner */}
+        {/* Profile Photo or Loading Spinner */}
         <div
           style={{
             display: "flex",
@@ -206,19 +243,66 @@ export default function FPProfileModal({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                overflow: "hidden",
               }}
             >
-              {/* Grey loading spinner */}
-              <div
-                style={{
-                  width: "60px",
-                  height: "60px",
-                  borderRadius: "50%",
-                  border: "3px solid #e5e7eb",
-                  borderTopColor: "#9ca3af",
-                  animation: "spin 1s linear infinite",
-                }}
-              />
+              {profilePhotoUrl ? (
+                <>
+                  {/* Profile Photo - positioned absolutely to fill the circle */}
+                  <img
+                    src={profilePhotoUrl}
+                    alt={
+                      dietitianData?.result?.dietitian_details
+                        ?.dietitian_name || selectedContact.name
+                    }
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      display: imageError ? "none" : "block",
+                    }}
+                    onLoad={() => {
+                      setImageLoading(false);
+                      setImageError(false);
+                    }}
+                    onError={() => {
+                      setImageLoading(false);
+                      setImageError(true);
+                    }}
+                  />
+                  {/* Loading spinner - centered by flexbox */}
+                  {shouldShowLoader && (
+                    <div
+                      style={{
+                        width: "60px",
+                        height: "60px",
+                        borderRadius: "50%",
+                        border: "3px solid #e5e7eb",
+                        borderTopColor: "#9ca3af",
+                        animation: "spin 1s linear infinite",
+                      }}
+                    />
+                  )}
+                </>
+              ) : (
+                /* Show loader if no photo URL available */
+                shouldShowLoader && (
+                  <div
+                    style={{
+                      width: "60px",
+                      height: "60px",
+                      borderRadius: "50%",
+                      border: "3px solid #e5e7eb",
+                      borderTopColor: "#9ca3af",
+                      animation: "spin 1s linear infinite",
+                    }}
+                  />
+                )
+              )}
             </div>
           </div>
 

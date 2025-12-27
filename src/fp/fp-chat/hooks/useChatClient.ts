@@ -50,7 +50,6 @@ export function useChatClient(
       if (handlers) {
         clientRef.current.addEventHandler("app_handlers", handlers);
         handlersRef.current = handlers;
-        console.log("🔄 Message handlers re-registered");
       }
     }
   }, [handlers]);

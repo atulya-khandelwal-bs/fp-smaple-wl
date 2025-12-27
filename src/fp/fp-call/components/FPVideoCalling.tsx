@@ -124,7 +124,6 @@ const FPVideoCallingInner = ({
     trackName: string
   ): void => {
     if (!track) {
-      console.log(`⚠️ No ${trackName} track to stop`);
       return;
     }
 
@@ -143,20 +142,11 @@ const FPVideoCallingInner = ({
       if (mediaStreamTrack) {
         if (mediaStreamTrack.readyState !== "ended") {
           mediaStreamTrack.stop();
-          console.log(
-            `🛑 Stopped ${trackName} MediaStreamTrack (system device) - ID: ${mediaStreamTrack.id}`
-          );
         } else {
-          console.log(`⚠️ ${trackName} MediaStreamTrack already ended`);
         }
       } else {
-        console.warn(
-          `⚠️ Could not get MediaStreamTrack from ${trackName} track`
-        );
       }
-    } catch (error) {
-      console.warn(`Error stopping ${trackName} MediaStreamTrack:`, error);
-    }
+    } catch (error) {}
   };
 
   // Comprehensive function to stop ALL video tracks from DOM elements
@@ -175,9 +165,6 @@ const FPVideoCallingInner = ({
               if (track.kind === "video" && track.readyState !== "ended") {
                 track.stop();
                 stoppedCount++;
-                console.log(
-                  `🛑 Stopped video MediaStreamTrack from DOM element - ID: ${track.id}, label: ${track.label}`
-                );
               }
             });
             // Clear the srcObject to release the stream
@@ -208,9 +195,6 @@ const FPVideoCallingInner = ({
                   if (track.kind === "video" && track.readyState === "live") {
                     track.stop();
                     stoppedCount++;
-                    console.log(
-                      `🛑 Stopped live video MediaStreamTrack - ID: ${track.id}, label: ${track.label}`
-                    );
                   }
                 });
                 element.srcObject = null;
@@ -234,32 +218,20 @@ const FPVideoCallingInner = ({
               (device) => device.kind === "videoinput"
             );
             if (videoDevices.length > 0) {
-              console.log(
-                `ℹ️ Found ${videoDevices.length} video input device(s)`
-              );
             }
           })
-          .catch((err) => {
-            console.warn("Error enumerating devices:", err);
-          });
+          .catch((err) => {});
       }
 
       if (stoppedCount > 0) {
-        console.log(
-          `🛑 Stopped ${stoppedCount} video MediaStreamTrack(s) from DOM elements`
-        );
       }
-    } catch (error) {
-      console.warn("Error stopping all video tracks from DOM:", error);
-    }
+    } catch (error) {}
   };
 
   // Filter out blocked UIDs (Recorder and RTST Agent) - ignore all events for these users
   const remoteUsers = allRemoteUsers.filter((user) => {
     return shouldProceedWithRemoteUsers(user.uid);
   });
-
-  console.log("remoteUsers", remoteUsers);
 
   // Log all connected users details
   useEffect(() => {
@@ -287,15 +259,6 @@ const FPVideoCallingInner = ({
         videoTrack: user.videoTrack ? "present" : "absent",
         isLocal: false,
       }));
-
-      console.log("📞 === CALL CONNECTION DETAILS ===");
-      console.log("Local User:", localUserDetails);
-      console.log("Remote Users:", remoteUsersDetails);
-      console.log("Total Users in Call:", 1 + remoteUsers.length);
-      console.log("Channel:", channel);
-      console.log("Is Connected:", isConnected);
-      console.log("Calling State:", calling);
-      console.log("===================================");
     }
   }, [
     isConnected,
@@ -318,7 +281,6 @@ const FPVideoCallingInner = ({
       const devices = await AgoraRTC.getDevices();
       return devices.filter((d) => d.kind === "videoinput");
     } catch (error) {
-      console.error("Error getting cameras:", error);
       return [];
     }
   };
@@ -330,7 +292,6 @@ const FPVideoCallingInner = ({
     const loadCameras = async () => {
       const cams = await getCameras();
       setCameras(cams);
-      console.log("Available cameras:", cams.length);
     };
 
     loadCameras();
@@ -339,7 +300,6 @@ const FPVideoCallingInner = ({
   // Flip camera function
   const flipCamera = async (): Promise<void> => {
     if (!localCameraTrack) {
-      console.warn("Cannot flip camera: no camera track available");
       return;
     }
 
@@ -349,13 +309,11 @@ const FPVideoCallingInner = ({
         const cams = await getCameras();
         setCameras(cams);
         if (cams.length < 2) {
-          console.warn("Only one camera available, cannot flip");
           return;
         }
       }
 
       if (cameras.length < 2) {
-        console.warn("Only one camera available, cannot flip");
         return;
       }
 
@@ -363,17 +321,9 @@ const FPVideoCallingInner = ({
       const nextIndex = (currentCameraIndex + 1) % cameras.length;
       const nextCamera = cameras[nextIndex];
 
-      console.log("Flipping camera:", {
-        from:
-          cameras[currentCameraIndex]?.label || `Camera ${currentCameraIndex}`,
-        to: nextCamera.label || `Camera ${nextIndex}`,
-      });
-
       await localCameraTrack.setDevice(nextCamera.deviceId);
       setCurrentCameraIndex(nextIndex);
-    } catch (error) {
-      console.error("Error flipping camera:", error);
-    }
+    } catch (error) {}
   };
 
   // Suppress Agora analytics errors
@@ -440,7 +390,6 @@ const FPVideoCallingInner = ({
   useEffect(() => {
     if (isConnected && !callStartTimeRef.current) {
       callStartTimeRef.current = Date.now();
-      console.log("Call started at:", new Date(callStartTimeRef.current));
     }
   }, [isConnected]);
 
@@ -451,9 +400,6 @@ const FPVideoCallingInner = ({
   useEffect(() => {
     // When calling changes from true to false, stop the system devices
     if (prevCallingRef.current && !calling) {
-      console.log(
-        "🛑 Call ended (calling=false), stopping system camera and microphone"
-      );
       stopMediaStreamTrack(localCameraTrack, "camera");
       stopMediaStreamTrack(localMicrophoneTrack, "microphone");
 
@@ -464,18 +410,14 @@ const FPVideoCallingInner = ({
       try {
         if (localCameraTrack && typeof localCameraTrack.close === "function") {
           localCameraTrack.close();
-          console.log("🛑 Closed camera Agora track");
         }
         if (
           localMicrophoneTrack &&
           typeof localMicrophoneTrack.close === "function"
         ) {
           localMicrophoneTrack.close();
-          console.log("🛑 Closed microphone Agora track");
         }
-      } catch (error) {
-        console.warn("Error closing tracks:", error);
-      }
+      } catch (error) {}
 
       // Additional cleanup after a delay
       setTimeout(() => {
@@ -492,15 +434,9 @@ const FPVideoCallingInner = ({
       // Only clean up if call has ended (calling is false) or component is unmounting
       // Don't clean up during remounts when call is still active
       if (calling) {
-        console.log(
-          "⚠️ Component remounting during active call, preserving tracks"
-        );
         return;
       }
 
-      console.log(
-        "🛑 Component unmounting, stopping system camera and microphone"
-      );
       stopMediaStreamTrack(localCameraTrack, "camera");
       stopMediaStreamTrack(localMicrophoneTrack, "microphone");
 
@@ -518,9 +454,7 @@ const FPVideoCallingInner = ({
         ) {
           localMicrophoneTrack.close();
         }
-      } catch (error) {
-        console.warn("Error closing tracks on unmount:", error);
-      }
+      } catch (error) {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps - only run on true unmount
@@ -532,19 +466,15 @@ const FPVideoCallingInner = ({
     // Ignore user-joined event for blocked UIDs
     const handleUserJoined = (user: { uid: string | number }): void => {
       if (!shouldProceedWithRemoteUsers(user.uid)) {
-        console.log("Ignoring blocked UID join event:", user.uid);
         return;
       }
-      console.log("✅ Remote user joined:", user.uid);
     };
 
     // Ignore user-left event for blocked UIDs
     const handleUserLeft = (user: { uid: string | number }): void => {
       if (!shouldProceedWithRemoteUsers(user.uid)) {
-        console.log("Ignoring blocked UID leave event:", user.uid);
         return;
       }
-      console.log("❌ Remote user left:", user.uid);
     };
 
     // Helper function to handle track setup after subscription
@@ -558,59 +488,27 @@ const FPVideoCallingInner = ({
       if (mediaType === "audio") {
         // Verify audio track is available and play it
         if (remoteUser && remoteUser.audioTrack) {
-          console.log(`✅ Audio track available for user ${uid}`);
           // Ensure audio track is played
           try {
             if (!remoteUser.audioTrack.isPlaying) {
               await remoteUser.audioTrack.play();
-              console.log(`🔊 Audio track playing for user ${uid}`);
             }
             // Set volume based on speaker state
             if (typeof remoteUser.audioTrack.setVolume === "function") {
               remoteUser.audioTrack.setVolume(speakerOn ? 100 : 0);
             }
-          } catch (playError) {
-            console.error(
-              `Error playing audio track for user ${uid}:`,
-              playError
-            );
-          }
+          } catch (playError) {}
         } else {
-          console.warn(
-            `⚠️ Audio track not found for user ${uid} after subscription`
-          );
           // Don't retry here - let the recovery logic in useEffect handle it
         }
       } else if (mediaType === "video") {
         // Verify video track is available
         if (remoteUser && remoteUser.videoTrack) {
-          console.log(
-            `✅ Video track available for user ${uid}, will be played by RemoteUser component`
-          );
           // Log detailed video track info
-          console.log(`📹 Video track details for user ${uid}:`, {
-            trackId: remoteUser.videoTrack.getTrackId?.() || "unknown",
-            isPlaying: remoteUser.videoTrack.isPlaying,
-            enabled: remoteUser.videoTrack.enabled,
-            muted: remoteUser.videoTrack.muted,
-            trackMediaType: remoteUser.videoTrack.trackMediaType,
-          });
         } else {
-          console.warn(
-            `⚠️ Video track not found for user ${uid} after subscription`
-          );
           // Log what we do have
           if (remoteUser) {
-            console.log(`📹 Remote user ${uid} state:`, {
-              hasVideo: remoteUser.hasVideo,
-              hasVideoTrack: !!remoteUser.videoTrack,
-              hasAudio: remoteUser.hasAudio,
-              hasAudioTrack: !!remoteUser.audioTrack,
-            });
           } else {
-            console.warn(
-              `⚠️ Remote user ${uid} not found in remoteUsers array`
-            );
           }
           // Don't retry here - let the recovery logic in useEffect handle it
         }
@@ -623,14 +521,8 @@ const FPVideoCallingInner = ({
       mediaType: "audio" | "video"
     ): Promise<void> => {
       if (!shouldProceedWithRemoteUsers(user.uid)) {
-        console.log("Ignoring blocked UID published event:", user.uid);
         return;
       }
-
-      console.log(`📡 Remote user published ${mediaType}:`, user.uid, {
-        hasAudio: user.hasAudio,
-        hasVideo: user.hasVideo,
-      });
 
       // For video tracks, be more aggressive - try subscribing immediately
       // The user-published event means the track is available, even if user isn't in remoteUsers yet
@@ -642,7 +534,6 @@ const FPVideoCallingInner = ({
       ): Promise<void> => {
         try {
           await _client.subscribe(uid, type);
-          console.log(`✅ Successfully subscribed to ${type} for user:`, uid);
 
           // Wait a bit for the track to be available after subscription
           await new Promise((resolve) => setTimeout(resolve, 200));
@@ -658,24 +549,12 @@ const FPVideoCallingInner = ({
 
           if (isInvalidUserError && retryCount < maxRetries) {
             // User might not be fully in channel yet, retry after a delay
-            console.warn(
-              `⚠️ User ${uid} not in channel yet for ${type}, retrying (${
-                retryCount + 1
-              }/${maxRetries})...`
-            );
             setTimeout(
               () => subscribeWithRetry(uid, type, retryCount + 1, maxRetries),
               500 * (retryCount + 1) // Exponential backoff
             );
           } else if (isInvalidUserError) {
-            console.warn(
-              `⚠️ User ${uid} is not in channel after ${maxRetries} attempts, cannot subscribe to ${type}`
-            );
           } else {
-            console.error(
-              `❌ Error subscribing to ${type} for user ${uid}:`,
-              error
-            );
             // For non-INVALID_REMOTE_USER errors, also retry
             if (retryCount < maxRetries) {
               setTimeout(
@@ -694,10 +573,8 @@ const FPVideoCallingInner = ({
     // Handle user-unpublished event for blocked UIDs (mute/unmute)
     const handleUserUnpublished = (user: { uid: string | number }): void => {
       if (!shouldProceedWithRemoteUsers(user.uid)) {
-        console.log("Ignoring blocked UID unpublished event:", user.uid);
         return;
       }
-      console.log("🔇 Remote user unpublished:", user.uid);
     };
 
     // Add event listeners
@@ -723,23 +600,15 @@ const FPVideoCallingInner = ({
     remoteUsers.forEach(async (user) => {
       // Check if user has published video but we don't have the track
       if (user.hasVideo && !user.videoTrack) {
-        console.log(
-          `🔄 User ${user.uid} has published video but track missing, subscribing...`
-        );
         try {
           await _client.subscribe(user.uid, "video");
-          console.log(`✅ Subscribed to video for user ${user.uid}`);
           // Wait a bit for track to be available
           setTimeout(() => {
             const updatedUser = _client.remoteUsers.find(
               (u) => u.uid === user.uid
             );
             if (updatedUser?.videoTrack) {
-              console.log(`✅ Video track now available for user ${user.uid}`);
             } else {
-              console.warn(
-                `⚠️ Video track still not available for user ${user.uid} after subscription`
-              );
             }
           }, 300);
         } catch (error: unknown) {
@@ -750,10 +619,6 @@ const FPVideoCallingInner = ({
             errorMessage.includes("user is not in the channel");
 
           if (!isInvalidUserError) {
-            console.error(
-              `❌ Error subscribing to video for user ${user.uid}:`,
-              error
-            );
           }
         }
       } else if (!user.hasVideo && !user.videoTrack && !isAudioCall) {
@@ -764,30 +629,18 @@ const FPVideoCallingInner = ({
         // 3. The user-published event was missed
         // Only try once per user to avoid spam
         if (!videoFallbackAttemptedRef.current.has(user.uid)) {
-          console.log(
-            `🔄 Fallback: User ${user.uid} shows hasVideo=false but trying to subscribe to video anyway (might be flag issue)...`
-          );
           videoFallbackAttemptedRef.current.add(user.uid);
           try {
             await _client.subscribe(user.uid, "video");
-            console.log(
-              `✅ Fallback: Successfully subscribed to video for user ${user.uid}`
-            );
             // Wait a bit and check if track is now available
             setTimeout(() => {
               const updatedUser = _client.remoteUsers.find(
                 (u) => u.uid === user.uid
               );
               if (updatedUser?.videoTrack) {
-                console.log(
-                  `✅ Fallback: Video track now available for user ${user.uid} - flag was incorrect!`
-                );
                 // Reset hasVideo flag tracking since we found the track
                 videoFallbackAttemptedRef.current.delete(user.uid);
               } else {
-                console.log(
-                  `ℹ️ Fallback: No video track available for user ${user.uid} (user likely has camera off)`
-                );
               }
             }, 300);
           } catch (error: unknown) {
@@ -798,14 +651,7 @@ const FPVideoCallingInner = ({
               errorMessage.includes("user is not in the channel");
 
             if (isInvalidUserError) {
-              console.log(
-                `ℹ️ Fallback: User ${user.uid} has not published video (camera is off) - this is expected`
-              );
             } else {
-              console.warn(
-                `⚠️ Fallback: Error subscribing to video for user ${user.uid}:`,
-                error
-              );
             }
           }
         }
@@ -813,9 +659,6 @@ const FPVideoCallingInner = ({
 
       // Check if user has published audio but we don't have the track
       if (user.hasAudio && !user.audioTrack) {
-        console.log(
-          `🔄 User ${user.uid} has published audio but track missing, subscribing...`
-        );
         try {
           await _client.subscribe(user.uid, "audio");
           const updatedUser = _client.remoteUsers.find(
@@ -828,7 +671,6 @@ const FPVideoCallingInner = ({
             if (typeof updatedUser.audioTrack.setVolume === "function") {
               updatedUser.audioTrack.setVolume(speakerOn ? 100 : 0);
             }
-            console.log(`✅ Subscribed to audio for user ${user.uid}`);
           }
         } catch (error: unknown) {
           const errorMessage =
@@ -838,10 +680,6 @@ const FPVideoCallingInner = ({
             errorMessage.includes("user is not in the channel");
 
           if (!isInvalidUserError) {
-            console.error(
-              `❌ Error subscribing to audio for user ${user.uid}:`,
-              error
-            );
           }
         }
       }
@@ -859,14 +697,8 @@ const FPVideoCallingInner = ({
       remoteUsers.forEach(async (user) => {
         // If user has published video but we don't have the track, subscribe
         if (user.hasVideo && !user.videoTrack) {
-          console.log(
-            `🔄 Periodic check: User ${user.uid} has video but track missing, subscribing...`
-          );
           try {
             await _client.subscribe(user.uid, "video");
-            console.log(
-              `✅ Periodic check: Subscribed to video for user ${user.uid}`
-            );
           } catch (error: unknown) {
             const errorMessage =
               error instanceof Error ? error.message : String(error);
@@ -875,19 +707,12 @@ const FPVideoCallingInner = ({
               errorMessage.includes("user is not in the channel");
 
             if (!isInvalidUserError) {
-              console.warn(
-                `⚠️ Periodic check: Error subscribing to video for user ${user.uid}:`,
-                error
-              );
             }
           }
         } else if (!user.hasVideo && !user.videoTrack && !isAudioCall) {
           // Fallback: Try subscribing even if hasVideo is false (only once per user)
           // This helps catch cases where the flag is incorrect
           if (!videoFallbackAttemptedRef.current.has(user.uid)) {
-            console.log(
-              `🔄 Periodic check (fallback): User ${user.uid} shows hasVideo=false, trying subscription...`
-            );
             videoFallbackAttemptedRef.current.add(user.uid);
             try {
               await _client.subscribe(user.uid, "video");
@@ -896,9 +721,6 @@ const FPVideoCallingInner = ({
                   (u) => u.uid === user.uid
                 );
                 if (updatedUser?.videoTrack) {
-                  console.log(
-                    `✅ Periodic check (fallback): Video track found for user ${user.uid} - flag was incorrect!`
-                  );
                   videoFallbackAttemptedRef.current.delete(user.uid);
                 }
               }, 300);
@@ -911,9 +733,6 @@ const FPVideoCallingInner = ({
 
               if (isInvalidUserError) {
                 // User hasn't published video, this is expected
-                console.log(
-                  `ℹ️ Periodic check (fallback): User ${user.uid} has not published video (camera off)`
-                );
               }
             }
           }
@@ -932,28 +751,12 @@ const FPVideoCallingInner = ({
     if (!isConnected || !calling || remoteUsers.length === 0) return;
 
     remoteUserEverJoinedRef.current = true;
-    console.log("Remote user joined. Both users are connected.");
 
     // Log remote user video track status for debugging
     remoteUsers.forEach((user) => {
       // Check actual track presence, not just hasAudio/hasVideo flags
       const hasActualAudioTrack = !!user.audioTrack;
       const hasActualVideoTrack = !!user.videoTrack;
-
-      console.log(`👤 Remote User ${user.uid}:`, {
-        hasVideo: user.hasVideo,
-        hasVideoTrack: hasActualVideoTrack,
-        videoTrackPlaying: user.videoTrack?.isPlaying,
-        videoTrackState: user.videoTrack?.getStats
-          ? "available"
-          : "not available",
-        hasAudio: user.hasAudio,
-        hasAudioTrack: hasActualAudioTrack,
-        audioTrackPlaying: user.audioTrack?.isPlaying,
-        // Log discrepancy if flags don't match actual tracks
-        audioTrackMismatch: user.hasAudio !== hasActualAudioTrack,
-        videoTrackMismatch: user.hasVideo !== hasActualVideoTrack,
-      });
 
       // Helper function to verify user is in channel before subscribing
       const isUserInChannel = (uid: string | number): boolean => {
@@ -968,9 +771,6 @@ const FPVideoCallingInner = ({
       ): boolean => {
         // Don't attempt if user is not in channel
         if (!isUserInChannel(uid)) {
-          console.warn(
-            `⚠️ User ${uid} is not in channel, skipping ${mediaType} recovery`
-          );
           return false;
         }
 
@@ -982,15 +782,9 @@ const FPVideoCallingInner = ({
         const maxAttempts = 2; // Only try twice per user per media type
 
         if (mediaType === "audio" && attempts.audio >= maxAttempts) {
-          console.warn(
-            `⚠️ Max audio recovery attempts reached for user ${uid}`
-          );
           return false;
         }
         if (mediaType === "video" && attempts.video >= maxAttempts) {
-          console.warn(
-            `⚠️ Max video recovery attempts reached for user ${uid}`
-          );
           return false;
         }
 
@@ -1000,10 +794,6 @@ const FPVideoCallingInner = ({
       // If audio track is missing but hasAudio is true, try to subscribe again
       if (!hasActualAudioTrack && user.hasAudio) {
         if (shouldAttemptRecovery(user.uid, "audio")) {
-          console.warn(
-            `⚠️ Audio track missing for user ${user.uid} but hasAudio=true, attempting to subscribe...`
-          );
-
           // Increment attempt counter
           const attempts = recoveryAttemptsRef.current.get(user.uid) || {
             audio: 0,
@@ -1017,9 +807,6 @@ const FPVideoCallingInner = ({
           setTimeout(async () => {
             // Double-check user is still in channel before subscribing
             if (!isUserInChannel(user.uid)) {
-              console.warn(
-                `⚠️ User ${user.uid} no longer in channel, aborting audio recovery`
-              );
               return;
             }
 
@@ -1035,7 +822,6 @@ const FPVideoCallingInner = ({
                 if (typeof updatedUser.audioTrack.setVolume === "function") {
                   updatedUser.audioTrack.setVolume(speakerOn ? 100 : 0);
                 }
-                console.log(`✅ Audio track recovered for user ${user.uid}`);
                 // Reset attempt counter on success
                 recoveryAttemptsRef.current.set(user.uid, {
                   ...attempts,
@@ -1050,19 +836,12 @@ const FPVideoCallingInner = ({
                 errorMessage.includes("user is not in the channel");
 
               if (isInvalidUserError) {
-                console.warn(
-                  `⚠️ User ${user.uid} is not in channel, cannot recover audio track`
-                );
                 // Don't retry if user is not in channel
                 recoveryAttemptsRef.current.set(user.uid, {
                   ...attempts,
                   audio: 999,
                 });
               } else {
-                console.error(
-                  `❌ Error recovering audio track for user ${user.uid}:`,
-                  error
-                );
               }
             }
           }, 500); // Increased delay to allow channel state to stabilize
@@ -1072,10 +851,6 @@ const FPVideoCallingInner = ({
       // If video track is missing but hasVideo is true, try to subscribe again
       if (!hasActualVideoTrack && user.hasVideo) {
         if (shouldAttemptRecovery(user.uid, "video")) {
-          console.warn(
-            `⚠️ Video track missing for user ${user.uid} but hasVideo=true, attempting to subscribe...`
-          );
-
           // Increment attempt counter
           const attempts = recoveryAttemptsRef.current.get(user.uid) || {
             audio: 0,
@@ -1089,9 +864,6 @@ const FPVideoCallingInner = ({
           setTimeout(async () => {
             // Double-check user is still in channel before subscribing
             if (!isUserInChannel(user.uid)) {
-              console.warn(
-                `⚠️ User ${user.uid} no longer in channel, aborting video recovery`
-              );
               return;
             }
 
@@ -1101,7 +873,6 @@ const FPVideoCallingInner = ({
                 (u) => u.uid === user.uid
               );
               if (updatedUser?.videoTrack) {
-                console.log(`✅ Video track recovered for user ${user.uid}`);
                 // Reset attempt counter on success
                 recoveryAttemptsRef.current.set(user.uid, {
                   ...attempts,
@@ -1116,19 +887,12 @@ const FPVideoCallingInner = ({
                 errorMessage.includes("user is not in the channel");
 
               if (isInvalidUserError) {
-                console.warn(
-                  `⚠️ User ${user.uid} is not in channel, cannot recover video track`
-                );
                 // Don't retry if user is not in channel
                 recoveryAttemptsRef.current.set(user.uid, {
                   ...attempts,
                   video: 999,
                 });
               } else {
-                console.error(
-                  `❌ Error recovering video track for user ${user.uid}:`,
-                  error
-                );
               }
             }
           }, 500); // Increased delay to allow channel state to stabilize
@@ -1141,37 +905,21 @@ const FPVideoCallingInner = ({
           // Set volume to 0 when speaker is off, 100 when speaker is on
           if (typeof user.audioTrack.setVolume === "function") {
             user.audioTrack.setVolume(speakerOn ? 100 : 0);
-            console.log(
-              `🔊 Remote audio track volume set to ${
-                speakerOn ? 100 : 0
-              } for user ${user.uid}`
-            );
           }
           // Also control playback - stop playing when speaker is off
           if (speakerOn) {
             if (!user.audioTrack.isPlaying) {
               user.audioTrack.play();
-              console.log(`🔊 Remote audio track playing for user ${user.uid}`);
             }
           } else {
             if (user.audioTrack.isPlaying) {
               user.audioTrack.stop();
-              console.log(`🔇 Remote audio track stopped for user ${user.uid}`);
             }
           }
-        } catch (error) {
-          console.error(
-            `Error controlling remote audio track for user ${user.uid}:`,
-            error
-          );
-        }
+        } catch (error) {}
       } else if (user.hasAudio) {
         // Track should exist but doesn't - try to subscribe (only if user is in channel)
         if (shouldAttemptRecovery(user.uid, "audio")) {
-          console.warn(
-            `⚠️ Audio track missing for user ${user.uid} but hasAudio=true, subscribing...`
-          );
-
           // Increment attempt counter
           const attempts = recoveryAttemptsRef.current.get(user.uid) || {
             audio: 0,
@@ -1185,9 +933,6 @@ const FPVideoCallingInner = ({
           setTimeout(async () => {
             // Double-check user is still in channel before subscribing
             if (!isUserInChannel(user.uid)) {
-              console.warn(
-                `⚠️ User ${user.uid} no longer in channel, aborting audio subscription`
-              );
               return;
             }
 
@@ -1203,9 +948,6 @@ const FPVideoCallingInner = ({
                 if (typeof updatedUser.audioTrack.setVolume === "function") {
                   updatedUser.audioTrack.setVolume(speakerOn ? 100 : 0);
                 }
-                console.log(
-                  `✅ Audio track subscribed and playing for user ${user.uid}`
-                );
                 // Reset attempt counter on success
                 recoveryAttemptsRef.current.set(user.uid, {
                   ...attempts,
@@ -1220,19 +962,12 @@ const FPVideoCallingInner = ({
                 errorMessage.includes("user is not in the channel");
 
               if (isInvalidUserError) {
-                console.warn(
-                  `⚠️ User ${user.uid} is not in channel, cannot subscribe to audio`
-                );
                 // Don't retry if user is not in channel
                 recoveryAttemptsRef.current.set(user.uid, {
                   ...attempts,
                   audio: 999,
                 });
               } else {
-                console.error(
-                  `❌ Error subscribing to audio for user ${user.uid}:`,
-                  error
-                );
               }
             }
           }, 500); // Increased delay to allow channel state to stabilize
@@ -1351,27 +1086,23 @@ const FPVideoCallingInner = ({
 
         // Check if MediaStreamTrack is still active - if not, don't try to configure
         if (mediaStreamTrack && mediaStreamTrack.readyState === "ended") {
-          console.warn("⚠️ MediaStreamTrack is ended, cannot configure");
           return;
         }
 
         // Ensure track is enabled based on micOn state
         if (typeof localMicrophoneTrack.setEnabled === "function") {
           localMicrophoneTrack.setEnabled(micOn);
-          console.log(`🎤 Microphone track ${micOn ? "enabled" : "disabled"}`);
         }
 
         // Ensure track is NOT muted when micOn is true (setMuted(false) means unmuted)
         // This is critical - muted tracks will cause AgoraAudioRemoteStateFailed
         if (typeof localMicrophoneTrack.setMuted === "function") {
           localMicrophoneTrack.setMuted(!micOn);
-          console.log(`🎤 Microphone track ${micOn ? "unmuted" : "muted"}`);
         }
 
         // Set volume to maximum when mic is on
         if (typeof localMicrophoneTrack.setVolume === "function" && micOn) {
           localMicrophoneTrack.setVolume(100);
-          console.log("🎤 Microphone track volume set to 100");
         }
 
         // CRITICAL: Ensure the underlying MediaStreamTrack is also enabled and not muted
@@ -1379,14 +1110,10 @@ const FPVideoCallingInner = ({
         if (mediaStreamTrack && micOn) {
           if (mediaStreamTrack.enabled === false) {
             mediaStreamTrack.enabled = true;
-            console.log("🎤 MediaStreamTrack enabled");
           }
           if (mediaStreamTrack.muted === true) {
             // Note: MediaStreamTrack.muted is read-only, but we can check it
             // If it's muted, it might be due to browser/system settings
-            console.warn(
-              "⚠️ MediaStreamTrack is muted (may be due to browser/system settings)"
-            );
           }
         }
 
@@ -1407,38 +1134,23 @@ const FPVideoCallingInner = ({
           mediaStreamTrackSettings: mediaStreamTrack?.getSettings?.() || "N/A",
         };
 
-        console.log("🎤 Microphone track state:", trackState);
-
         // CRITICAL: Verify the track is actually ready to send audio
         if (micOn && mediaStreamTrack) {
           if (mediaStreamTrack.readyState !== "live") {
-            console.error(
-              "❌ MediaStreamTrack is not live! State:",
-              mediaStreamTrack.readyState
-            );
           }
           if (mediaStreamTrack.enabled === false) {
-            console.error("❌ MediaStreamTrack is disabled!");
           }
           if (mediaStreamTrack.muted === true) {
-            console.error(
-              "❌ MediaStreamTrack is muted at browser/system level!"
-            );
           }
         }
 
         // If track is still muted when it should be unmuted, retry
         if (micOn && localMicrophoneTrack.muted && retryCount < maxRetries) {
           retryCount++;
-          console.warn(
-            `⚠️ Track still muted, retrying (${retryCount}/${maxRetries})...`
-          );
           setTimeout(configureMicrophoneTrack, 200);
         } else if (micOn && localMicrophoneTrack.muted) {
-          console.error("❌ Failed to unmute microphone track after retries");
         }
       } catch (error) {
-        console.error("❌ Error setting microphone track state:", error);
         if (retryCount < maxRetries) {
           retryCount++;
           setTimeout(configureMicrophoneTrack, 200);
@@ -1458,13 +1170,11 @@ const FPVideoCallingInner = ({
         if (localMicrophoneTrack && micOn) {
           // Periodically check and fix track state
           if (localMicrophoneTrack.muted) {
-            console.warn("⚠️ Microphone track became muted, fixing...");
             if (typeof localMicrophoneTrack.setMuted === "function") {
               localMicrophoneTrack.setMuted(false);
             }
           }
           if (!localMicrophoneTrack.enabled) {
-            console.warn("⚠️ Microphone track became disabled, fixing...");
             if (typeof localMicrophoneTrack.setEnabled === "function") {
               localMicrophoneTrack.setEnabled(true);
             }
@@ -1493,11 +1203,8 @@ const FPVideoCallingInner = ({
         try {
           if (typeof localCameraTrack.setEnabled === "function") {
             localCameraTrack.setEnabled(false);
-            console.log("📹 Camera track disabled (camera off)");
           }
-        } catch (error) {
-          console.error("Error disabling camera track:", error);
-        }
+        } catch (error) {}
       }
       return;
     }
@@ -1524,7 +1231,6 @@ const FPVideoCallingInner = ({
         // Control track enabled state (this affects what remote side sees)
         if (typeof localCameraTrack.setEnabled === "function") {
           localCameraTrack.setEnabled(cameraOn);
-          console.log(`📹 Camera track ${cameraOn ? "enabled" : "disabled"}`);
         }
 
         // Control underlying MediaStreamTrack to turn system camera on/off
@@ -1533,7 +1239,6 @@ const FPVideoCallingInner = ({
             // Camera on: ensure MediaStreamTrack is enabled and running
             if (mediaStreamTrack.enabled === false) {
               mediaStreamTrack.enabled = true;
-              console.log("📹 MediaStreamTrack enabled (system camera on)");
             }
             // If track was stopped, we can't restart it - track will need to be recreated
             // But since we always create the track, this shouldn't happen
@@ -1543,17 +1248,13 @@ const FPVideoCallingInner = ({
             // This is a browser limitation - we can't fully turn off the camera while keeping the track
             if (mediaStreamTrack.enabled === true) {
               mediaStreamTrack.enabled = false;
-              console.log("📹 MediaStreamTrack disabled (stops capturing)");
             }
             // Also try to stop the track to turn off system camera completely
             // This will make the track unusable, but when camera is turned back on, the track will be recreated
             if (mediaStreamTrack.readyState === "live") {
               try {
                 mediaStreamTrack.stop();
-                console.log("📹 MediaStreamTrack stopped (system camera off)");
-              } catch (error) {
-                console.warn("Could not stop MediaStreamTrack:", error);
-              }
+              } catch (error) {}
             }
           }
         }
@@ -1568,20 +1269,13 @@ const FPVideoCallingInner = ({
           mediaStreamTrackEnabled: mediaStreamTrack?.enabled ?? "N/A",
         };
 
-        console.log("📹 Camera track state:", trackState);
-
         // If track is not in correct state, retry
         if (cameraOn && !localCameraTrack.enabled && retryCount < maxRetries) {
           retryCount++;
-          console.warn(
-            `⚠️ Camera track not enabled, retrying (${retryCount}/${maxRetries})...`
-          );
           setTimeout(configureCameraTrack, 200);
         } else if (cameraOn && !localCameraTrack.enabled) {
-          console.error("❌ Failed to enable camera track after retries");
         }
       } catch (error) {
-        console.error("❌ Error setting camera track state:", error);
         if (retryCount < maxRetries) {
           retryCount++;
           setTimeout(configureCameraTrack, 200);
@@ -1605,7 +1299,6 @@ const FPVideoCallingInner = ({
   const generateToken = async (): Promise<string | null> => {
     if (!channel || typeof uid !== "number") {
       if (!isStandalone) {
-        console.error("Cannot generate token: missing channel or UID");
       } else {
         alert("Please enter channel name and UID");
       }
@@ -1614,7 +1307,6 @@ const FPVideoCallingInner = ({
 
     // Prevent multiple simultaneous token generation requests
     if (isGeneratingTokenRef.current) {
-      console.log("Token generation already in progress, skipping...");
       return null;
     }
 
@@ -1642,10 +1334,6 @@ const FPVideoCallingInner = ({
       if (data.token) {
         const newToken = data.token;
         setToken(newToken);
-        console.log(
-          "Token generated successfully:",
-          newToken.substring(0, 50) + "..."
-        );
         isGeneratingTokenRef.current = false;
         setGeneratingToken(false);
         return newToken;
@@ -1653,7 +1341,6 @@ const FPVideoCallingInner = ({
         throw new Error("Token not found in response");
       }
     } catch (error) {
-      console.error("Error generating token:", error);
       isGeneratingTokenRef.current = false;
       setGeneratingToken(false);
       alert(
@@ -1703,12 +1390,6 @@ const FPVideoCallingInner = ({
       return;
     }
 
-    console.log("Auto-joining call with props:", {
-      channel: propChannel,
-      userId: userId,
-      uid: uid,
-    });
-
     hasAttemptedJoinRef.current = true;
     const autoJoin = async () => {
       setPendingJoin(true);
@@ -1718,7 +1399,6 @@ const FPVideoCallingInner = ({
       } else {
         setPendingJoin(false);
         hasAttemptedJoinRef.current = false; // Reset on failure to allow retry
-        console.error("Failed to auto-generate token");
       }
     };
     autoJoin();
@@ -1747,17 +1427,9 @@ const FPVideoCallingInner = ({
       channel &&
       typeof uid === "number"
     ) {
-      console.log(
-        "Token ready, joining call with token:",
-        token.substring(0, 50) + "..."
-      );
-      console.log("App ID:", appId);
-      console.log("Channel:", channel);
-      console.log("UID:", uid);
       hasJoinedRef.current = true; // Set ref to prevent re-running
       setPendingJoin(false);
       // Set calling immediately to show call UI
-      console.log("Setting calling to true...");
       setCalling(true);
     }
   }, [token, pendingJoin, appId, channel, uid, calling]);
@@ -1765,7 +1437,6 @@ const FPVideoCallingInner = ({
   // Reset pendingJoin when connected
   useEffect(() => {
     if (isConnected && pendingJoin) {
-      console.log("Call connected, resetting pendingJoin");
       setPendingJoin(false);
     }
   }, [isConnected, pendingJoin]);
@@ -1783,7 +1454,6 @@ const FPVideoCallingInner = ({
           isGeneratingTokenRef.current = false;
           recoveryAttemptsRef.current.clear();
           videoFallbackAttemptedRef.current.clear();
-          console.log("Refs reset for new call.");
         }
       }, 500);
       return () => clearTimeout(resetTimer);
@@ -1813,8 +1483,6 @@ const FPVideoCallingInner = ({
   // Handlers
 
   const handleEndCall = (): void => {
-    console.log("🛑 Call ending, stopping system camera and microphone");
-
     // CRITICAL: Set calling to false FIRST to prevent new tracks from being created
     // This ensures the hooks stop creating new tracks immediately
     setCalling(false);
@@ -1840,20 +1508,15 @@ const FPVideoCallingInner = ({
         typeof currentCameraTrack.close === "function"
       ) {
         currentCameraTrack.close();
-        console.log("🛑 Closed camera Agora track");
       }
       if (currentMicTrack && typeof currentMicTrack.close === "function") {
         currentMicTrack.close();
-        console.log("🛑 Closed microphone Agora track");
       }
-    } catch (error) {
-      console.warn("Error closing tracks:", error);
-    }
+    } catch (error) {}
 
     // Multiple cleanup passes to ensure all tracks are stopped
     // Pass 1: Immediate cleanup
     setTimeout(() => {
-      console.log("🛑 Cleanup pass 1: stopping any remaining video tracks");
       stopAllVideoTracksFromDOM();
       // Also try to stop tracks from the current references again
       stopMediaStreamTrack(currentCameraTrack, "camera");
@@ -1861,13 +1524,11 @@ const FPVideoCallingInner = ({
 
     // Pass 2: Delayed cleanup to catch any tracks created during transition
     setTimeout(() => {
-      console.log("🛑 Cleanup pass 2: final cleanup of video tracks");
       stopAllVideoTracksFromDOM();
     }, 200);
 
     // Pass 3: Final cleanup after a longer delay
     setTimeout(() => {
-      console.log("🛑 Cleanup pass 3: final verification");
       stopAllVideoTracksFromDOM();
     }, 500);
 
@@ -1878,13 +1539,6 @@ const FPVideoCallingInner = ({
         ? Math.floor((callEndTime - callStartTime) / 1000)
         : 0;
       const bothUsersConnected = remoteUserEverJoinedRef.current;
-
-      console.log("Ending call with:", {
-        duration,
-        bothUsersConnected,
-        callStartTime: callStartTime ? new Date(callStartTime) : null,
-        callEndTime: new Date(callEndTime),
-      });
 
       onEndCall({
         duration,

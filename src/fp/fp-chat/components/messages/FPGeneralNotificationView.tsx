@@ -143,13 +143,8 @@ export default function FPGeneralNotificationView({
               <button
                 key={index}
                 onClick={() => {
-                  console.log("Button clicked:", detail);
                   // Log action_id for callback/tracking purposes
                   if (detail.action_id) {
-                    console.log(
-                      "General notification button clicked - action_id:",
-                      detail.action_id
-                    );
                   }
                   // Handle button click - navigate to redirect_url
                   if (detail.redirect_url) {
@@ -165,7 +160,6 @@ export default function FPGeneralNotificationView({
                       );
                     } else {
                       // Handle internal route navigation
-                      console.log("Internal route:", detail.redirect_url);
                       // You can add router navigation here if using React Router
                       // For now, we'll treat it as a URL
                       window.location.href = detail.redirect_url;

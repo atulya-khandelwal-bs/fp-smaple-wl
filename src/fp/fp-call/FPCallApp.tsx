@@ -58,12 +58,10 @@ function FPCallApp({
 
       if (client.publishPresence) {
         await client.publishPresence(presenceOptions);
-        console.log(`✅ Presence published: ${description}`);
         presenceStatusRef.current = description;
         hasPublishedPresence.current = true;
       }
     } catch (error) {
-      console.error("❌ Error publishing presence:", error);
     }
   };
 
@@ -96,11 +94,9 @@ function FPCallApp({
             usernames: [peerId],
             expiry: 3600, // Subscription duration in seconds (1 hour)
           });
-          console.log(`✅ Subscribed to presence for ${peerId}`);
           hasSubscribedPresence.current = true;
         }
       } catch (error) {
-        console.error("❌ Error subscribing to presence:", error);
       }
     };
 
@@ -118,7 +114,6 @@ function FPCallApp({
       if (presenceData.userId === peerId) {
         const status = presenceData.description as PresenceStatus;
         setPeerPresenceStatus(status);
-        console.log(`📡 Peer presence update: ${peerId} is ${status}`);
       }
     };
 
@@ -171,10 +166,8 @@ function FPCallApp({
               description: "offline",
               userId: peerId,
             });
-            console.log("✅ Presence cleaned up: offline");
           }
         } catch (error) {
-          console.error("❌ Error cleaning up presence:", error);
         }
       };
 

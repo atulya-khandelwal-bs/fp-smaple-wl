@@ -69,7 +69,6 @@ export default function FPProductMessageView({
                     "noopener,noreferrer"
                   );
                 } else {
-                  console.log("Product clicked (no URL):", p);
                 }
               }}
             >
@@ -319,7 +318,6 @@ export default function FPProductMessageView({
                                 window.location.href = p.rediection_url;
                               }
                             } else {
-                              console.log("CTA clicked (no URL):", p);
                             }
                           }}
                           onMouseEnter={(e) => {
@@ -362,7 +360,6 @@ export default function FPProductMessageView({
                             "noopener,noreferrer"
                           );
                         } else {
-                          console.log("Redirect clicked (no URL):", p);
                         }
                       }}
                       aria-label="View product details"

@@ -133,9 +133,6 @@ export function buildCustomExts(
   switch (type) {
     case "image": {
       const imagePayload = payload as ImagePayload;
-      console.log("payload", imagePayload);
-      console.log("payload.height", typeof imagePayload.height);
-      console.log("payload.width", typeof imagePayload.width);
       return {
         type: "image",
         url: imagePayload.url,

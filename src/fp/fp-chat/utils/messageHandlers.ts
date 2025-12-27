@@ -114,7 +114,6 @@ export function createMessageHandlers({
       // Ignore messages from blocked UIDs (Recorder and RTST Agent)
       const fromId = msg.from || "";
       if (isBlockedUID(fromId)) {
-        console.log("🚫 Ignoring message from blocked UID:", fromId);
         return;
       }
 
@@ -147,7 +146,6 @@ export function createMessageHandlers({
                 messageType: bodyObj.messageType,
                 payload: bodyObj.payload,
               };
-              console.log("Found API format in msg.body:", paramsData);
             } else if (bodyObj.customExts) {
               paramsData = bodyObj.customExts;
             } else if (bodyObj["v2:customExts"]) {
@@ -158,10 +156,6 @@ export function createMessageHandlers({
               typeof msg.params === "string"
                 ? JSON.parse(msg.params)
                 : msg.params;
-            console.log(
-              "Extracted from msg.params:",
-              JSON.stringify(paramsData, null, 2)
-            );
           }
 
           // Normalize the message structure for UI parsing (same as onCustomMessage)
@@ -182,16 +176,7 @@ export function createMessageHandlers({
                 ...parsedData,
                 type: parsedData.type || (paramsData as { type?: string }).type,
               };
-              console.log(
-                "✅ Parsed stringified data field (onTextMessage):",
-                JSON.stringify(normalizedData, null, 2)
-              );
             } catch (parseError) {
-              console.warn(
-                "Failed to parse data field (onTextMessage):",
-                parseError,
-                paramsData.data
-              );
               // Fall through to other normalization logic
             }
           }
@@ -313,12 +298,6 @@ export function createMessageHandlers({
             ? fromId.replace("user_", "")
             : fromId;
 
-          console.log("🔄 [onTextMessage] Updating conversation preview:", {
-            fromId,
-            normalizedFromId,
-            normalizedFromIdWithoutPrefix,
-            preview,
-          });
 
           setConversations((prev) => {
             // Find conversation by matching either format
@@ -330,12 +309,6 @@ export function createMessageHandlers({
                 c.id === `user_${normalizedFromIdWithoutPrefix}`
             );
 
-            console.log("🔄 [onTextMessage] Conversation search result:", {
-              existing: existing
-                ? { id: existing.id, lastMessage: existing.lastMessage }
-                : null,
-              allConversationIds: prev.map((c) => c.id),
-            });
 
             if (existing) {
               // Use the existing conversation ID format
@@ -350,13 +323,6 @@ export function createMessageHandlers({
                     }
                   : conv
               );
-              console.log("✅ [onTextMessage] Conversation updated:", {
-                conversationId,
-                newLastMessage: preview,
-                updatedConversation: updated.find(
-                  (c) => c.id === conversationId
-                ),
-              });
               return updated;
             }
             // Create new conversation - use normalized format with user_ prefix
@@ -370,10 +336,6 @@ export function createMessageHandlers({
               lastSeen: "",
               lastMessageFrom: fromId,
             };
-            console.log(
-              "➕ [onTextMessage] Creating new conversation:",
-              newConversation
-            );
             return [newConversation, ...prev];
           });
         }
@@ -455,16 +417,7 @@ export function createMessageHandlers({
               preview = `${callType} call`;
               // Handle incoming call notification if action is initiate
               if (objTyped.action === "initiate" && handleIncomingCall) {
-                console.log(
-                  "Incoming call detected in text message:",
-                  objTyped
-                );
                 if (objTyped.channel && objTyped.from) {
-                  console.log("Calling handleIncomingCall with:", {
-                    from: objTyped.from,
-                    channel: objTyped.channel,
-                    callId: objTyped.channel,
-                  });
                   handleIncomingCall({
                     from: objTyped.from,
                     channel: objTyped.channel,
@@ -476,10 +429,6 @@ export function createMessageHandlers({
                         : "video", // Default to video if not specified
                   });
                 } else {
-                  console.warn(
-                    "Call message missing channel or from:",
-                    objTyped
-                  );
                 }
               }
             } else if (t === "meal_plan_updated" || t === "meal_plan_update")
@@ -633,20 +582,10 @@ export function createMessageHandlers({
       // Ignore messages from blocked UIDs (Recorder and RTST Agent)
       const fromId = msg.from || "";
       if (isBlockedUID(fromId)) {
-        console.log("🚫 Ignoring custom message from blocked UID:", fromId);
         return;
       }
 
       // Handle custom messages (attachments)
-      console.log("=== onCustomMessage called ===");
-      console.log("Full msg object:", JSON.stringify(msg, null, 2));
-      console.log("msg.type:", msg.type);
-      console.log("msg.params:", msg.params);
-      console.log("msg.params type:", typeof msg.params);
-      console.log("msg.body:", msg.body);
-      console.log("msg.ext:", msg.ext);
-      console.log("msg.msg:", msg.msg);
-      console.log("All msg keys:", Object.keys(msg));
 
       let preview = "Attachment";
       let messageContent = "";
@@ -669,10 +608,6 @@ export function createMessageHandlers({
               messageType: bodyObj.messageType,
               payload: bodyObj.payload,
             };
-            console.log(
-              "✅ Found API format in msg.body (messageType + payload):",
-              JSON.stringify(paramsData, null, 2)
-            );
           }
         }
 
@@ -682,9 +617,7 @@ export function createMessageHandlers({
           msg.customExts &&
           typeof msg.customExts === "object"
         ) {
-          console.log("Trying msg.customExts:", msg.customExts);
           paramsData = msg.customExts;
-          console.log("Extracted from customExts:", paramsData);
         }
 
         // Third priority: Check v2:customExts at top level (alternative format)
@@ -693,9 +626,7 @@ export function createMessageHandlers({
           msg["v2:customExts"] &&
           typeof msg["v2:customExts"] === "object"
         ) {
-          console.log("Trying msg['v2:customExts']:", msg["v2:customExts"]);
           paramsData = msg["v2:customExts"];
-          console.log("Extracted from v2:customExts:", paramsData);
         }
 
         // Fourth priority: Check body.customExts (if not already extracted API format)
@@ -709,9 +640,7 @@ export function createMessageHandlers({
             "v2:customExts"?: unknown;
           };
           if (bodyObj.customExts) {
-            console.log("Trying msg.body.customExts:", bodyObj.customExts);
             paramsData = bodyObj.customExts;
-            console.log("Extracted from body.customExts:", paramsData);
           }
         }
 
@@ -726,12 +655,7 @@ export function createMessageHandlers({
             "v2:customExts"?: unknown;
           };
           if (bodyObj["v2:customExts"]) {
-            console.log(
-              "Trying msg.body['v2:customExts']:",
-              bodyObj["v2:customExts"]
-            );
             paramsData = bodyObj["v2:customExts"];
-            console.log("Extracted from body.v2:customExts:", paramsData);
           }
         }
 
@@ -742,7 +666,6 @@ export function createMessageHandlers({
           Array.isArray(msg.bodies) &&
           msg.bodies.length > 0
         ) {
-          console.log("Trying msg.bodies for v2:customExts:", msg.bodies);
           for (const bodyItem of msg.bodies) {
             if (
               bodyItem &&
@@ -750,7 +673,6 @@ export function createMessageHandlers({
               bodyItem["v2:customExts"]
             ) {
               paramsData = bodyItem["v2:customExts"];
-              console.log("Extracted from bodies[].v2:customExts:", paramsData);
               break;
             }
             // Also check customExts array (without v2: prefix)
@@ -765,10 +687,6 @@ export function createMessageHandlers({
               if (customExt && typeof customExt === "object" && customExt.url) {
                 // Extract all properties from customExt
                 paramsData = { ...customExt };
-                console.log(
-                  "Extracted from bodies[].customExts[0]:",
-                  paramsData
-                );
                 break;
               }
             }
@@ -784,18 +702,11 @@ export function createMessageHandlers({
           if (typeof msg.params === "string") {
             try {
               paramsData = JSON.parse(msg.params);
-              console.log("Parsed params from string:", paramsData);
             } catch (parseError) {
-              console.error(
-                "Failed to parse params string:",
-                parseError,
-                msg.params
-              );
               paramsData = msg.params;
             }
           } else if (typeof msg.params === "object") {
             paramsData = msg.params;
-            console.log("Using params as object:", paramsData);
           }
         }
 
@@ -805,9 +716,7 @@ export function createMessageHandlers({
           (typeof paramsData === "object" &&
             Object.keys(paramsData).length === 0)
         ) {
-          console.log("paramsData is empty, trying ext properties...");
           if (msg.ext && typeof msg.ext === "object") {
-            console.log("Trying msg.ext:", msg.ext);
 
             // Check if ext has the attachment properties directly (we spread them)
             if (
@@ -825,10 +734,6 @@ export function createMessageHandlers({
                 duration: msg.ext.duration,
                 transcription: msg.ext.transcription,
               };
-              console.log(
-                "Extracted from ext properties directly:",
-                paramsData
-              );
             }
 
             // If still empty, try ext.data
@@ -841,7 +746,6 @@ export function createMessageHandlers({
                   typeof msg.ext.data === "string"
                     ? JSON.parse(msg.ext.data)
                     : msg.ext.data;
-                console.log("Extracted from ext.data:", paramsData);
               } catch {}
             }
 
@@ -857,7 +761,6 @@ export function createMessageHandlers({
               }
               if (Object.keys(extCopy).length > 0) {
                 paramsData = extCopy;
-                console.log("Using entire ext object (filtered):", paramsData);
               }
             }
           }
@@ -867,11 +770,9 @@ export function createMessageHandlers({
             (!paramsData || Object.keys(paramsData).length === 0) &&
             msg.body
           ) {
-            console.log("Trying msg.body:", msg.body);
             try {
               const bodyData =
                 typeof msg.body === "string" ? JSON.parse(msg.body) : msg.body;
-              console.log("Extracted from body:", bodyData);
 
               // Check if body has the API format (messageType + payload)
               if (
@@ -885,15 +786,10 @@ export function createMessageHandlers({
                   ...(bodyData.payload as object),
                   type: bodyData.messageType,
                 };
-                console.log(
-                  "Extracted payload from body with messageType:",
-                  paramsData
-                );
               } else {
                 paramsData = bodyData;
               }
             } catch (parseError) {
-              console.error("Failed to parse msg.body:", parseError);
             }
           }
 
@@ -902,11 +798,9 @@ export function createMessageHandlers({
             (!paramsData || Object.keys(paramsData).length === 0) &&
             msg.msg
           ) {
-            console.log("Trying msg.msg:", msg.msg);
             try {
               const msgData =
                 typeof msg.msg === "string" ? JSON.parse(msg.msg) : msg.msg;
-              console.log("Extracted from msg.msg:", msgData);
 
               // Check if msg.msg has the API format (messageType + payload)
               if (
@@ -919,21 +813,14 @@ export function createMessageHandlers({
                   messageType: msgData.messageType,
                   payload: msgData.payload,
                 };
-                console.log("Found API format in msg.msg:", paramsData);
               } else {
                 paramsData = msgData;
               }
             } catch (parseError) {
-              console.error("Failed to parse msg.msg:", parseError);
             }
           }
         }
 
-        console.log("Final extracted paramsData:", paramsData);
-        console.log(
-          "Final extracted paramsData (stringified):",
-          JSON.stringify(paramsData, null, 2)
-        );
 
         // Normalize the message structure for UI parsing
         let normalizedData = paramsData;
@@ -953,16 +840,7 @@ export function createMessageHandlers({
               ...parsedData,
               type: parsedData.type || (paramsData as { type?: string }).type,
             };
-            console.log(
-              "✅ Parsed stringified data field:",
-              JSON.stringify(normalizedData, null, 2)
-            );
           } catch (parseError) {
-            console.warn(
-              "Failed to parse data field:",
-              parseError,
-              paramsData.data
-            );
             // Fall through to other normalization logic
           }
         }
@@ -1034,10 +912,6 @@ export function createMessageHandlers({
             preview = `${callType} call`;
             // Handle incoming call notification if action is initiate
             if (paramsObj.action === "initiate" && handleIncomingCall) {
-              console.log(
-                "Incoming call detected in custom message:",
-                paramsObj
-              );
               if (paramsObj.channel && paramsObj.from) {
                 handleIncomingCall({
                   from: paramsObj.from,
@@ -1114,34 +988,14 @@ export function createMessageHandlers({
 
           // Ensure the logged message has 'type' field for UI parsing
           messageContent = JSON.stringify(normalizedData);
-          console.log(
-            "Normalized messageContent (stringified):",
-            messageContent
-          );
         } else {
           // Log what we got for debugging
-          console.warn("paramsData is not valid or empty:", paramsData);
-          console.warn(
-            "paramsData stringified:",
-            JSON.stringify(paramsData, null, 2)
-          );
-          console.warn("Falling back to stringifying entire msg object");
           messageContent = JSON.stringify(msg);
         }
       } catch (error) {
-        console.error("Error processing custom message:", error, msg);
-        console.error(
-          "Error details - msg.params:",
-          JSON.stringify(msg.params, null, 2)
-        );
-        console.error(
-          "Error details - msg.body:",
-          JSON.stringify(msg.body, null, 2)
-        );
         messageContent = JSON.stringify(msg.params || msg.body || msg || {});
       }
 
-      console.log("Final messageContent to log (stringified):", messageContent);
       // Check if this is a self-sent message (from current user)
       // This handles cases where backend sends messages on behalf of the user
       const isSelfSent = fromId === userId || String(fromId) === String(userId);
@@ -1227,7 +1081,6 @@ export function createMessageHandlers({
           const errorMessage =
             error instanceof Error ? error.message : String(error);
           addLog(`Token renewal failed: ${errorMessage}`);
-          console.error("Error renewing token:", error);
         }
       }
     },
@@ -1252,7 +1105,6 @@ export function createMessageHandlers({
           const errorMessage =
             error instanceof Error ? error.message : String(error);
           addLog(`Reconnection failed: ${errorMessage}`);
-          console.error("Error reconnecting:", error);
           setIsLoggingIn(false);
         }
       } else {
@@ -1271,17 +1123,9 @@ export function createMessageHandlers({
       // Ignore messages from blocked UIDs (Recorder and RTST Agent)
       const fromId = msg.from || "";
       if (isBlockedUID(fromId)) {
-        console.log("🚫 Ignoring custom message from blocked UID:", fromId);
         return;
       }
 
-      console.log("📝 [onModifiedMessage] Message edited:", {
-        id: (msg as { id?: string; mid?: string }).id,
-        mid: (msg as { id?: string; mid?: string }).mid,
-        from: msg.from,
-        content: msg.msg || msg.msgContent || msg.data,
-        fullMessage: msg,
-      });
 
       // Add the edited message to logs so it gets processed
       // The message will have the same mid but updated content
@@ -1308,16 +1152,6 @@ export function createMessageHandlers({
         isEdited: true, // Mark as edited
       };
 
-      console.log("📝 [onModifiedMessage] Adding edited message to logs:", {
-        messageIdForEditing,
-        msgId,
-        msgMid,
-        from: msg.from,
-        oldContent: "N/A (will be matched from existing)",
-        newContent: messageContent,
-        logEntry: logEntry,
-        logString: logEntry.log,
-      });
 
       // Add as a log entry with serverMsgId and mid to identify it as an edited message
       // Use 'log' property to match the format expected by the message processing logic

@@ -159,7 +159,6 @@ export const FPCallUI = ({
   // // Log remote user details
   // useEffect(() => {
   //   if (remoteUsers && remoteUsers.length > 0) {
-  //     console.log("📞 Remote Users in Call:", {
   //       count: remoteUsers.length,
   //       users: remoteUsers.map((user) => ({
   //         uid: user.uid,
@@ -181,7 +180,6 @@ export const FPCallUI = ({
 
   //     // Log individual user details
   //     remoteUsers.forEach((user, index) => {
-  //       console.log(`👤 Remote User ${index + 1}:`, {
   //         uid: user.uid,
   //         uidType: typeof user.uid,
   //         hasAudioTrack: !!user.audioTrack,
@@ -204,7 +202,6 @@ export const FPCallUI = ({
   //       });
   //     });
   //   } else {
-  //     console.log("📞 No remote users in call");
   //   }
   // }, [remoteUsers]);
 
@@ -223,11 +220,6 @@ export const FPCallUI = ({
   // Show call UI if connected OR if calling is true (to handle delay in isConnected update)
   const shouldShowCallUI = isConnected || calling;
 
-  console.log("localUserId", localUserId);
-  console.log("localUserName", localUserName);
-  console.log("localUserPhoto", localUserPhoto);
-  console.log("peerName", peerName);
-  console.log("peerAvatar", peerAvatar);
 
   return (
     <>

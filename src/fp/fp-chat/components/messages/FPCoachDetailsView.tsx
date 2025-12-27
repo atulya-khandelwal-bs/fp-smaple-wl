@@ -72,7 +72,6 @@ export default function FPCoachDetailsView({
 
           // Log action_id for callback/tracking purposes
           if (actionId) {
-            console.log("Coach clicked - action_id:", actionId);
           }
 
           if (redirectUrl) {
@@ -85,10 +84,6 @@ export default function FPCoachDetailsView({
               window.location.href = redirectUrl;
             }
           } else {
-            console.log("Coach clicked (no redirect URL):", {
-              action_id: actionId,
-              system: msg.system,
-            });
           }
         }}
       >

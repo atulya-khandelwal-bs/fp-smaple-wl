@@ -11,7 +11,6 @@ export const initializeHlsPlayer = (
   mediaUrl: string
 ): Hls | null => {
   if (!mediaUrl || !mediaUrl.includes(".m3u8")) {
-    console.warn("Invalid HLS URL:", mediaUrl);
     return null;
   }
 
@@ -31,15 +30,12 @@ export const initializeHlsPlayer = (
       if (data.fatal) {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            console.error("Fatal network error encountered, try to recover");
             hls.startLoad();
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
-            console.error("Fatal media error encountered, try to recover");
             hls.recoverMediaError();
             break;
           default:
-            console.error("Fatal error, cannot recover");
             hls.destroy();
             break;
         }
@@ -52,7 +48,6 @@ export const initializeHlsPlayer = (
     mediaElement.src = mediaUrl;
     return null; // No Hls instance needed for native support
   } else {
-    console.error("HLS is not supported in this browser");
     return null;
   }
 };

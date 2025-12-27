@@ -117,7 +117,7 @@ export default function FPChatHeader({
                 />
               )}
             </div>
-            {/* Nutritionist Label */}
+            {/* Designation Label */}
             {selectedContact && (
               <p
                 style={{
@@ -128,7 +128,7 @@ export default function FPChatHeader({
                   textAlign: "left",
                 }}
               >
-                Nutritionist
+                {selectedContact.description || "Nutritionist"}
               </p>
             )}
           </div>
