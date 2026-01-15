@@ -170,7 +170,7 @@ export default function FPScheduledCallBanner({
         alignItems: "center",
         gap: "0.75rem",
         padding: "0.75rem 1rem",
-        backgroundColor: "#10b981",
+        backgroundColor: "#E7E9EB",
         borderRadius: "0 12px 12px 0",
         cursor: handleClick ? "pointer" : "default",
         marginBottom: "0.5rem",
@@ -205,7 +205,7 @@ export default function FPScheduledCallBanner({
           style={{
             fontSize: "14px",
             fontWeight: 600,
-            color: "#FFFFFF",
+            color: "#109310",
           }}
         >
           Call scheduled
@@ -213,7 +213,7 @@ export default function FPScheduledCallBanner({
         <span
           style={{
             fontSize: "12px",
-            color: "#FFFFFF",
+            color: "#0A1F34",
             opacity: 0.9,
           }}
         >

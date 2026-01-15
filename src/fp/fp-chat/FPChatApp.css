@@ -448,7 +448,7 @@ input {
 
 .message-bubble {
   padding: 1rem;
-  border-radius: 0.25rem;
+  border-radius: 10px;
   max-width: 250px;
   word-wrap: break-word;
   position: relative;
@@ -460,38 +460,14 @@ input {
   margin-left: 8px;
 }
 
-/* Triangle tail on the bottom-left for incoming messages */
-.message-wrapper.incoming .message-bubble::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: -8px;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 8px 8px 0 0;
-  border-color: #e5e7eb transparent transparent transparent;
-}
-
 .message-wrapper.outgoing .message-bubble {
-  background: #4caf50;
+  background: #109310;
   color: #ffffff;
   border-radius: 12px 12px 4px 12px;
   margin-right: 8px;
 }
 
-/* Triangle tail on the bottom-right for outgoing messages */
-.message-wrapper.outgoing .message-bubble::before {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -8px;
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 8px 0 0 8px;
-  border-color: #4caf50 transparent transparent transparent;
-}
+/* SVG tail is now rendered inline in FPMessageBubble component */
 
 .message-text {
   font-size: 0.875rem;

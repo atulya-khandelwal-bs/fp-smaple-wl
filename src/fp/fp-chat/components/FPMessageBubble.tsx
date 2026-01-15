@@ -377,6 +377,46 @@ export default function FPMessageBubble({
           }}
         >
           {renderMessageContent()}
+          {!msg.isIncoming && (
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              style={{
+                position: "absolute",
+                right: -8,
+                bottom: -5,
+                pointerEvents: "none",
+              }}
+            >
+              <path
+                d="M0 7.71777C0.5 11.1206 2 18 18 18C16.2251 17.2188 9 12.6373 9 0L0 7.71777Z"
+                fill="#109310"
+              />
+            </svg>
+          )}
+          {msg.isIncoming && (
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              style={{
+                position: "absolute",
+                left: -8,
+                bottom: -5,
+                pointerEvents: "none",
+              }}
+            >
+              <path
+                d="M18 7.71777C17.5 11.1206 16 18 0 18C1.7749 17.2188 9 12.6373 9 0L18 7.71777Z"
+                fill="#e5e7eb"
+              />
+            </svg>
+          )}
         </div>
         <div className="message-time">{msg.timestamp}</div>
       </div>
