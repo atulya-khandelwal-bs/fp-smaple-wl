@@ -258,10 +258,7 @@ export default function FPMessageInput({
                 e.preventDefault();
                 e.stopPropagation();
               }}
-              disabled={
-                !selectedContact ||
-                (!draftAttachment && !hasText)
-              }
+              disabled={!selectedContact || (!draftAttachment && !hasText)}
               title="Send message"
               style={{
                 background: "none",

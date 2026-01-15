@@ -1,6 +1,7 @@
 import React from "react";
 import FPChatApp from "./fp/fp-chat/FPChatApp.tsx";
 import FPRecordingPlayerPage from "./fp/fp-chat/components/FPRecordingPlayerPage.tsx";
+import FP404Error from "./fp/fp-chat/components/FP404Error.tsx";
 
 // Sample patient id
 const userId = 119933;

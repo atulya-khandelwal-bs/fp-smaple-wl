@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import "./FPChatApp.css";
 import FPChatInterface from "./components/FPChatInterface.tsx";
 import FPCallApp from "../fp-call/FPCallApp.tsx";
+import FP404Error from "./components/FP404Error.tsx";
 import AgoraChat from "agora-chat";
 import { useChatClient } from "./hooks/useChatClient.ts";
 import config from "../common/config.ts";
@@ -70,6 +71,9 @@ function FPChatApp({
     call_type?: "video" | "audio"; // Type of call scheduled
   } | null>(null);
 
+  // 404 Error state
+  const [show404Error, setShow404Error] = useState<boolean>(false);
+
   // 🔹 Global message ID tracker to prevent duplicates
   const isSendingRef = useRef<boolean>(false);
   // 🔹 Track if call end message has been sent to prevent duplicates
@@ -130,6 +134,48 @@ function FPChatApp({
     }
   };
 
+  // Function to validate dietitian ID
+  const validateDietitianId = useCallback(async (): Promise<boolean> => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const callDate = Math.floor(today.getTime() / 1000);
+
+      const data = await fetchDietitianDetails(callDate);
+
+      // Check if the API response indicates an error or invalid dietitian
+      // API returns code 200 for success, other codes indicate errors
+      if (data?.code !== undefined && data.code !== 200) {
+        // If code is 404 or indicates not found, return false
+        if (
+          data.code === 404 ||
+          data.message?.toLowerCase().includes("not found") ||
+          data.status?.toLowerCase() === "error"
+        ) {
+          return false;
+        }
+      }
+
+      // If we get valid data with result, dietitian ID is valid
+      if (data?.result) {
+        return true;
+      }
+
+      // If no result, assume invalid
+      return false;
+    } catch (error) {
+      // Check if it's a 404 error
+      const axiosError = error as { response?: { status?: number } };
+      if (axiosError?.response?.status === 404) {
+        return false;
+      }
+      // For other errors, assume valid (don't block on network issues)
+      // This allows the app to continue even if there's a temporary network issue
+      console.error("Error validating dietitian ID:", error);
+      return true;
+    }
+  }, []);
+
   // Function to fetch scheduled call from API (reusable)
   // Memoized with useCallback to prevent unnecessary re-renders
   const fetchScheduledCall = useCallback(async (): Promise<void> => {
@@ -144,6 +190,13 @@ function FPChatApp({
       const callDate = Math.floor(today.getTime() / 1000);
 
       const data = await fetchDietitianDetails(callDate);
+
+      // Check if the API response indicates an error
+      if (data?.code && data.code === 404) {
+        setShow404Error(true);
+        setScheduledCallFromApi(null);
+        return;
+      }
 
       // Find first slot with schedule_call_id != null
       let foundScheduledSlot: {
@@ -189,11 +242,29 @@ function FPChatApp({
       }
 
       setScheduledCallFromApi(foundScheduledSlot);
+      setShow404Error(false); // Clear 404 error if we successfully fetched data
     } catch (error) {
       console.error("Error fetching scheduled call:", error);
+      // Check if it's a 404 error
+      if (
+        (error as { response?: { status?: number } })?.response?.status === 404
+      ) {
+        setShow404Error(true);
+      }
       setScheduledCallFromApi(null);
     }
   }, [isLoggedIn, selectedContact]);
+
+  // Validate dietitian ID on mount
+  useEffect(() => {
+    const checkDietitianId = async (): Promise<void> => {
+      const isValid = await validateDietitianId();
+      if (!isValid) {
+        setShow404Error(true);
+      }
+    };
+    checkDietitianId();
+  }, [validateDietitianId, conversationId]);
 
   // Fetch scheduled call from API on mount
   // Fetch scheduled call from API when logged in and contact is selected
@@ -1059,6 +1130,25 @@ function FPChatApp({
       isSendingRef.current = false; // Reset flag on error
     }
   };
+
+  // Show 404 error if dietitian ID is invalid
+  if (show404Error) {
+    return (
+      <FP404Error
+        message={`Dietitian ID "${conversationId}" not found`}
+        onRetry={async () => {
+          setShow404Error(false);
+          const isValid = await validateDietitianId();
+          if (!isValid) {
+            setShow404Error(true);
+          } else {
+            // If valid, try to fetch scheduled call again
+            await fetchScheduledCall();
+          }
+        }}
+      />
+    );
+  }
 
   // Show call interface if there's an active call
   if (activeCall) {
