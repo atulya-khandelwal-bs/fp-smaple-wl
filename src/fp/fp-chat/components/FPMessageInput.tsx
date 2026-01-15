@@ -249,7 +249,15 @@ export default function FPMessageInput({
           {shouldShowSend ? (
             <button
               className="icon-btn send-icon-btn"
-              onClick={onSend}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSend();
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
               disabled={
                 !selectedContact ||
                 (!draftAttachment && !hasText)

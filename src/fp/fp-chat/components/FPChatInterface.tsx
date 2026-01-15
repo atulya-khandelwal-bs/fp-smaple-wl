@@ -1181,7 +1181,6 @@ export default function FPChatInterface({
           };
 
           // Debug log for edited messages - show the created message object
-         
         }
       })
       .filter((msg) => msg !== null); // Filter out null messages (hidden call messages)
@@ -1465,8 +1464,6 @@ export default function FPChatInterface({
 
         // If we found an existing message with the same mid/serverMsgId/id and this is marked as edited
         if (existingMsg && (msg.isEdited || msg.mid || msg.serverMsgId)) {
-         
-
           // This is an edited message - mark it for update
           // IMPORTANT: Keep the new content from msg (the edited message)
           return {
@@ -1488,7 +1485,6 @@ export default function FPChatInterface({
         if (existingIds.has(msg.id)) {
           // If this is an edited message, we still want to process it
           if (msg.isEdited && (msg.mid || msg.serverMsgId)) {
-          
             return true; // Allow edited messages to pass through
           }
           return false;
@@ -1530,7 +1526,6 @@ export default function FPChatInterface({
           if (isExistingServerMsg && isNewServerMsg) {
             // If this is an edited message, allow it through
             if (msg.isEdited && (msg.mid || msg.serverMsgId)) {
-             
               return true;
             }
             return false;
@@ -2411,6 +2406,11 @@ export default function FPChatInterface({
   // Audio recording functions
   const startAudioRecording = async (): Promise<void> => {
     try {
+      // Prevent starting recording if we're in the middle of sending a message
+      if (isSendingRef.current) {
+        return;
+      }
+
       if (!navigator.mediaDevices?.getUserMedia) {
         alert("Audio recording is not supported in your browser");
         return;
@@ -3632,8 +3632,6 @@ export default function FPChatInterface({
 
   // Find the most recent scheduled call message
   const getScheduledCall = (): Message | null => {
-
-
     // First, check if we have a scheduled call from API with valid data
     if (
       scheduledCallFromApi &&
@@ -3668,10 +3666,8 @@ export default function FPChatInterface({
           },
         };
       } else {
-    
       }
     } else {
-     
     }
 
     // No fallback to messages - only use scheduledCallFromApi as single source of truth
@@ -3781,7 +3777,6 @@ export default function FPChatInterface({
           onClick={() => {
             // Only allow call initiation if within 5 minutes of scheduled time
             if (!canInitiateCall()) {
-          
               return;
             }
 
