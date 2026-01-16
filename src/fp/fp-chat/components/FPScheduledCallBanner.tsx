@@ -190,7 +190,31 @@ export default function FPScheduledCallBanner({
       }}
     >
       {/* Phone Icon */}
-      <Phone size={20} color="#FFFFFF" />
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 20 20"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <rect width="20" height="20" rx="10" fill="#109310" />
+        <g clip-path="url(#clip0_1_198)">
+          <path
+            d="M11.7058 10.8128C11.7577 10.7783 11.8174 10.7572 11.8796 10.7515C11.9417 10.7459 12.0042 10.7558 12.0616 10.7805L14.2722 11.7709C14.3467 11.8028 14.4089 11.8579 14.4494 11.928C14.49 11.9982 14.5067 12.0795 14.4972 12.16C14.4244 12.7042 14.1564 13.2035 13.743 13.565C13.3296 13.9264 12.7991 14.1254 12.25 14.125C10.5592 14.125 8.93774 13.4533 7.7422 12.2578C6.54665 11.0623 5.875 9.44075 5.875 7.75C5.87458 7.20091 6.0736 6.67035 6.43505 6.257C6.79649 5.84365 7.29576 5.57564 7.84 5.50281C7.92045 5.49325 8.00184 5.51001 8.07197 5.55057C8.14211 5.59113 8.19722 5.65331 8.22906 5.72781L9.21953 7.94031C9.24387 7.99714 9.25378 8.0591 9.24838 8.12068C9.24298 8.18226 9.22244 8.24155 9.18859 8.29328L8.18688 9.48437C8.15134 9.53799 8.13033 9.59991 8.12589 9.66408C8.12146 9.72825 8.13375 9.79247 8.16156 9.85047C8.54922 10.6441 9.36953 11.4545 10.1655 11.8384C10.2238 11.8661 10.2883 11.8781 10.3527 11.8733C10.417 11.8684 10.479 11.8469 10.5325 11.8108L11.7058 10.8128Z"
+            fill="white"
+          />
+        </g>
+        <defs>
+          <clipPath id="clip0_1_198">
+            <rect
+              width="12"
+              height="12"
+              fill="white"
+              transform="translate(4 4)"
+            />
+          </clipPath>
+        </defs>
+      </svg>
 
       {/* Text */}
       <div
@@ -199,12 +223,13 @@ export default function FPScheduledCallBanner({
           display: "flex",
           flexDirection: "column",
           gap: "0.125rem",
+          textAlign: "left",
         }}
       >
         <span
           style={{
             fontSize: "14px",
-            fontWeight: 600,
+            fontWeight: 500,
             color: "#109310",
           }}
         >
@@ -212,9 +237,10 @@ export default function FPScheduledCallBanner({
         </span>
         <span
           style={{
-            fontSize: "12px",
+            fontSize: "14px",
             color: "#0A1F34",
             opacity: 0.9,
+            fontWeight: 700,
           }}
         >
           {dateTimeText}
