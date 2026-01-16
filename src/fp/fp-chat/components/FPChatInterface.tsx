@@ -1765,28 +1765,28 @@ export default function FPChatInterface({
     setInputResetKey(0);
   }, [peerId]);
 
-  // Set up non-passive touch event listener for audio button
-  useEffect(() => {
-    const audioBtn = audioBtnRef.current;
-    if (!audioBtn) return;
+  // // Set up non-passive touch event listener for audio button
+  // useEffect(() => {
+  //   const audioBtn = audioBtnRef.current;
+  //   if (!audioBtn) return;
 
-    const handleTouchStart = (e: TouchEvent): void => {
-      if (!isRecording && selectedContact) {
-        e.preventDefault();
-        startAudioRecording();
-      }
-    };
+  //   const handleTouchStart = (e: TouchEvent): void => {
+  //     if (!isRecording && selectedContact) {
+  //       e.preventDefault();
+  //       startAudioRecording();
+  //     }
+  //   };
 
-    // Add event listener with { passive: false } to allow preventDefault
-    audioBtn.addEventListener("touchstart", handleTouchStart, {
-      passive: false,
-    });
+  //   // Add event listener with { passive: false } to allow preventDefault
+  //   audioBtn.addEventListener("touchstart", handleTouchStart, {
+  //     passive: false,
+  //   });
 
-    return () => {
-      audioBtn.removeEventListener("touchstart", handleTouchStart);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRecording, selectedContact]); // startAudioRecording is stable, no need to include
+  //   return () => {
+  //     audioBtn.removeEventListener("touchstart", handleTouchStart);
+  //   };
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [isRecording, selectedContact]); // startAudioRecording is stable, no need to include
 
   // Watch for message clearing after send to reset input
   useEffect(() => {
@@ -2200,6 +2200,11 @@ export default function FPChatInterface({
   const handleSendMedia = async (file: File): Promise<void> => {
     if (!peerId || !file) return;
 
+    // Prevent concurrent media uploads
+    if (isSendingRef.current) {
+      return;
+    }
+
     try {
       setUploadProgress(0);
 
@@ -2268,11 +2273,12 @@ export default function FPChatInterface({
 
       setMessage(JSON.stringify(payload));
 
-      // 4️⃣ Send
+      // 4️⃣ Send - handleSendMessage will set isSendingRef.current = true
       setTimeout(() => handleSendMessage(), 100);
     } catch (error) {
       console.error("❌ Upload failed:", error);
       alert("Error uploading file. Please try again.");
+      // Don't reset isSendingRef here - it's managed by handleSendMessage
     } finally {
       setTimeout(() => setUploadProgress(null), 1000);
     }
