@@ -1,7 +1,6 @@
 import React from "react";
 import FPChatApp from "./fp/fp-chat/FPChatApp.tsx";
 import FPRecordingPlayerPage from "./fp/fp-chat/components/FPRecordingPlayerPage.tsx";
-import FP404Error from "./fp/fp-chat/components/FP404Error.tsx";
 
 // Sample patient id
 const userId = 119933;
@@ -15,26 +14,21 @@ function App(): React.JSX.Element {
     return <FPRecordingPlayerPage />;
   }
 
-  // Get userId, conversationId, name, profilePhoto, and designation from URL params
-  // Format: ?userId=123&conversationId=456&name=John%20Doe&profilePhoto=https://example.com/photo.jpg&designation=Nutritionist
+  // Get userId and conversationId from URL params
+  // Format: ?userId=123&conversationId=456
+  // Note: name, profilePhoto, and designation are now fetched automatically from the API
   const urlUserId = urlParams.get("userId");
   const conversationId = urlParams.get("conversationId");
-  const name = urlParams.get("name") || "atulya";
-  const profilePhoto = urlParams.get("profilePhoto");
-  const designation = urlParams.get("designation");
 
   // Use URL params or defaults
   const finalUserId = urlUserId || String(userId);
   const finalConversationId = conversationId || "333"; // Default conversation ID
 
-  // Simply pass userId, conversationId, name, profilePhoto, and designation - token generation is handled internally by FPChatApp
+  // Only pass required props - dietitian details (name, photo, profile) are fetched automatically
   return (
     <FPChatApp
       userId={finalUserId}
       conversationId={finalConversationId}
-      name={name || undefined}
-      profilePhoto={profilePhoto || undefined}
-      designation={designation || undefined}
       onLogout={() => {
         console.log("User logged out from chat");
       }}

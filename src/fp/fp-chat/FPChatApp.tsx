@@ -16,9 +16,9 @@ import { fetchDietitianDetails } from "./services/dietitianApi";
 interface FPChatAppProps {
   userId: string;
   conversationId: string; // Required: the coach/user ID to chat with
-  name?: string; // Optional: the name to display for the conversation
-  profilePhoto?: string; // Optional: the profile photo URL for the conversation
-  designation?: string; // Optional: the designation/title to display (e.g., "Nutritionist", "Coach")
+  name?: string; // Optional: fallback name (will be replaced by API dietitian_name)
+  profilePhoto?: string; // Optional: fallback photo (will be replaced by API dietitian_photo)
+  designation?: string; // Optional: fallback designation (will be replaced by API dietitian_profile)
   onLogout?: () => void;
 }
 
@@ -85,6 +85,8 @@ function FPChatApp({
   const lastPollTimeRef = useRef<number>(0);
   // 🔹 Track if direct chat has been initialized to prevent multiple initializations
   const directChatInitializedRef = useRef<boolean>(false);
+  // 🔹 Track which contact ID has been updated with dietitian details
+  const contactDetailsUpdatedRef = useRef<string | null>(null);
 
   const addLog = (log: string | LogEntry): void =>
     setLogs((prev) => {
@@ -255,6 +257,50 @@ function FPChatApp({
     }
   }, [isLoggedIn, selectedContact]);
 
+  // Function to update contact with dietitian details from API
+  const updateContactWithDietitianDetails =
+    useCallback(async (): Promise<void> => {
+      if (!selectedContact) {
+        return;
+      }
+
+      // Skip if we've already updated this contact
+      if (contactDetailsUpdatedRef.current === selectedContact.id) {
+        return;
+      }
+
+      try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const callDate = Math.floor(today.getTime() / 1000);
+
+        const data = await fetchDietitianDetails(callDate);
+
+        // Check if we have valid dietitian details
+        if (data?.code === 200 && data?.result?.dietitian_details) {
+          const dietitianDetails = data.result.dietitian_details;
+
+          // Mark this contact as updated before updating state
+          contactDetailsUpdatedRef.current = selectedContact.id;
+
+          // Update selectedContact with dietitian details
+          setSelectedContact((prevContact) => {
+            if (!prevContact) return prevContact;
+            return {
+              ...prevContact,
+              name: dietitianDetails.dietitian_name || prevContact.name,
+              avatar: dietitianDetails.dietitian_photo || prevContact.avatar,
+              description:
+                dietitianDetails.dietitian_profile || prevContact.description,
+            };
+          });
+        }
+      } catch (error) {
+        console.error("Error updating contact with dietitian details:", error);
+        // Don't throw error - keep using initial contact data if API fails
+      }
+    }, [selectedContact]);
+
   // Validate dietitian ID on mount
   useEffect(() => {
     const checkDietitianId = async (): Promise<void> => {
@@ -265,6 +311,11 @@ function FPChatApp({
     };
     checkDietitianId();
   }, [validateDietitianId, conversationId]);
+
+  // Update contact with dietitian details when contact is selected
+  useEffect(() => {
+    updateContactWithDietitianDetails();
+  }, [updateContactWithDietitianDetails]);
 
   // Fetch scheduled call from API on mount
   // Fetch scheduled call from API when logged in and contact is selected
@@ -346,13 +397,14 @@ function FPChatApp({
           `Initializing direct chat with conversation ID: ${conversationId}`
         );
 
-        // Create a contact object from conversationId and provided name/profilePhoto/designation
+        // Create a contact object from conversationId with fallback values
+        // Note: name, avatar, and description will be updated from API dietitian details
         // The conversationId is the coach/user ID to chat with
         const contact: Contact = {
           id: String(conversationId),
-          name: name || `User ${conversationId}`, // Use provided name or default
-          avatar: profilePhoto || config.defaults.avatar, // Use provided photo or default
-          description: designation, // Store designation in description field
+          name: name || `User ${conversationId}`, // Fallback name (will be replaced by API)
+          avatar: profilePhoto || config.defaults.avatar, // Fallback photo (will be replaced by API)
+          description: designation, // Fallback designation (will be replaced by API)
           lastMessage: undefined,
           timestamp: null,
           lastMessageFrom: null,
@@ -385,6 +437,9 @@ function FPChatApp({
         // Set selected contact and peerId to open chat interface
         setSelectedContact(contact);
         setPeerId(contact.id);
+
+        // Reset contact details updated ref when conversation changes
+        contactDetailsUpdatedRef.current = null;
 
         // Mark as initialized to prevent re-initialization
         directChatInitializedRef.current = true;
