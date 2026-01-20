@@ -20,6 +20,7 @@ export default function FPAudioMessageView({
       }}
     >
       <audio
+      className="fp-audio"
         controls
         src={audioUrl}
         style={{ width: 210 }}

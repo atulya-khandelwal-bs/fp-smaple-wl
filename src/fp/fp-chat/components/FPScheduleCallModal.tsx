@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { X, Phone } from "lucide-react";
-import axios from "axios";
 import { Contact } from "../../common/types/chat";
 import config from "../../common/config.ts";
 import {
@@ -8,6 +7,7 @@ import {
   scheduleCallWithDietitian,
   type DietitianApiResponse,
 } from "../services/dietitianApi";
+import { sendCustomMessage } from "../services/chatApi";
 
 interface FPScheduleCallModalProps {
   isOpen: boolean;
@@ -44,7 +44,7 @@ export default function FPScheduleCallModal({
   const [callType, setCallType] = useState<"Video" | "Voice">("Video");
   const [dietitianData, setDietitianData] =
     useState<DietitianApiResponse | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [_loading, setLoading] = useState<boolean>(false); // Loading state kept for potential future UI use
   const [scheduling, setScheduling] = useState<boolean>(false);
 
   const loadDietitianDetails = async (): Promise<void> => {
@@ -301,17 +301,19 @@ export default function FPScheduleCallModal({
       // Send custom message for call scheduled
       if (selectedContact) {
         try {
-          const body = {
-            from: userId,
-            to: selectedContact.id,
-            type: "call_scheduled",
-            data: {
-              type: "call_scheduled",
-              time: call_date_time, // Unix timestamp in seconds
+          await sendCustomMessage({
+            conversation_id: selectedContact.id,
+            from_user: userId,
+            to_user: selectedContact.id,
+            message_type: "custom",
+            body: {
+              messageType: "call_scheduled",
+              payload: {
+                type: "call_scheduled",
+                time: call_date_time, // Unix timestamp in seconds
+              },
             },
-          };
-
-          await axios.post(config.api.customMessage, body);
+          });
         } catch (error) {
           // Don't block the scheduling flow if this fails
         }
@@ -675,7 +677,7 @@ export default function FPScheduleCallModal({
                   width: "80px",
                   height: "80px",
                   borderRadius: "50%",
-                  border: "3px dashed #10b981",
+                  border: "3px dashed #109310",
                   padding: "3px",
                   position: "relative",
                 }}
@@ -700,7 +702,7 @@ export default function FPScheduleCallModal({
                   width: "28px",
                   height: "28px",
                   borderRadius: "50%",
-                  backgroundColor: "#10b981",
+                  backgroundColor: "#109310",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -773,6 +775,8 @@ export default function FPScheduleCallModal({
                     key={index}
                     onClick={() => setSelectedDate(dateItem.date)}
                     style={{
+                      width: "69px",
+                      height: "56px",
                       padding: "0.5rem 0.75rem",
                       border: "none",
                       borderRadius: "8px",
@@ -790,9 +794,10 @@ export default function FPScheduleCallModal({
                     {/* Day of the week */}
                     <div
                       style={{
-                        fontSize: "11px",
-                        fontWeight: 400,
-                        color: "#6b7280",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        color: "#0A1F34",
+                        opacity: 0.6,
                         textTransform: "uppercase",
                         letterSpacing: "0.5px",
                       }}
@@ -802,9 +807,9 @@ export default function FPScheduleCallModal({
                     {/* Date number */}
                     <div
                       style={{
-                        fontSize: "20px",
+                        fontSize: "14px",
                         fontWeight: 700,
-                        color: "#374151",
+                        color: "#0A1F34",
                         lineHeight: "1",
                       }}
                     >
@@ -814,13 +819,11 @@ export default function FPScheduleCallModal({
                     <div
                       style={{
                         fontSize: "12px",
-                        fontWeight: 400,
-                        color: "#374151",
+                        fontWeight: 600,
+                        color: "#0A1F34",
                         position: "relative",
                         paddingBottom: "2px",
-                        borderBottom: isSelected
-                          ? "2px solid #dc2626"
-                          : "2px solid transparent",
+
                         transition: "border-color 0.2s",
                       }}
                     >
@@ -842,7 +845,7 @@ export default function FPScheduleCallModal({
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(3, 1fr)",
-                gap: "0.75rem",
+                gap: "10px",
               }}
             >
               {timeSlots.map((time, index) => {
@@ -852,17 +855,22 @@ export default function FPScheduleCallModal({
                     key={index}
                     onClick={() => setSelectedTime(time)}
                     style={{
-                      padding: "0.875rem 0.5rem",
+                      height: "40px",
+                      padding: "23px 21px",
                       border: isSelected
-                        ? "2px solid #dc2626"
-                        : "1px solid #d1d5db",
-                      borderRadius: "8px",
+                        ? "1px solid #DC4144"
+                        : "1px solid #E7E9EB",
+                      borderRadius: "10px",
                       backgroundColor: "#ffffff",
-                      color: isSelected ? "#dc2626" : "#374151",
+                      color: isSelected ? "#DC4144" : "#0A1F34",
                       fontSize: "14px",
-                      fontWeight: isSelected ? 600 : 400,
+                      fontWeight: 600,
                       cursor: "pointer",
                       transition: "all 0.2s",
+                      textAlign: "center",
+                      display: "flex",
+                      justifyContent: "center",
+                      alignItems: "center",
                     }}
                     onMouseEnter={(e) => {
                       if (!isSelected) {
@@ -891,12 +899,17 @@ export default function FPScheduleCallModal({
             >
               <div
                 style={{
-                  fontSize: "14px",
-                  fontWeight: 600,
-                  color: "#111827",
+                  width: "76px",
+                  height: "12px",
+                  lineHeight: "100%",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  color: "#0A1F34",
+                  opacity: 0.6,
                   marginBottom: "1rem",
                   textTransform: "uppercase",
                   letterSpacing: "0.5px",
+                  textAlign: "left",
                 }}
               >
                 SELECT TOPIC
@@ -905,7 +918,7 @@ export default function FPScheduleCallModal({
                 style={{
                   display: "flex",
                   flexWrap: "wrap",
-                  gap: "0.75rem",
+                  gap: "5px",
                 }}
               >
                 {topics.map((topic, index) => {
@@ -915,18 +928,22 @@ export default function FPScheduleCallModal({
                       key={index}
                       onClick={() => toggleTopic(topic)}
                       style={{
-                        padding: "0.75rem 1rem",
+                        height: "32px",
+                        padding: "10px 12px",
                         border: isSelected
-                          ? "2px solid #dc2626"
-                          : "1px solid #d1d5db",
-                        borderRadius: "8px",
+                          ? "1px solid #DC4144"
+                          : "1px solid #0A1F340F",
+                        borderRadius: "100px",
                         backgroundColor: "#ffffff",
-                        color: isSelected ? "#dc2626" : "#374151",
+                        color: isSelected ? "#DC4144" : "#0A1F34",
                         fontSize: "14px",
-                        fontWeight: isSelected ? 600 : 400,
+                        fontWeight: 500,
                         cursor: "pointer",
                         transition: "all 0.2s",
-                        whiteSpace: "nowrap",
+                        textAlign: "center",
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
                       }}
                       onMouseEnter={(e) => {
                         if (!isSelected) {
@@ -1061,6 +1078,7 @@ export default function FPScheduleCallModal({
                       color: "#111827",
                       fontWeight: 500,
                       marginBottom: "0.25rem",
+                      textAlign: "left",
                     }}
                   >
                     {formatFooterDate()} • {selectedTime}
@@ -1071,6 +1089,7 @@ export default function FPScheduleCallModal({
                         fontSize: "14px",
                         color: "#111827",
                         fontWeight: 500,
+                        textAlign: "left",
                       }}
                     >
                       {selectedTopics.join(" • ")}
@@ -1094,19 +1113,21 @@ export default function FPScheduleCallModal({
                 !hasDateAndTime || selectedTopics.length === 0 || scheduling
               }
               style={{
+                width: "131px",
+                height: "52px",
                 padding: "0.875rem 2rem",
                 border: "none",
-                borderRadius: "8px",
+                borderRadius: "100px",
                 backgroundColor:
                   hasDateAndTime && selectedTopics.length > 0 && !scheduling
                     ? "#dc2626"
-                    : "#f3f4f6",
+                    : "#DC4144",
                 color:
                   hasDateAndTime && selectedTopics.length > 0 && !scheduling
                     ? "#ffffff"
-                    : "#9ca3af",
-                fontSize: "16px",
-                fontWeight: 600,
+                    : "#ffffff",
+                fontSize: "14px",
+                fontWeight: 700,
                 cursor:
                   hasDateAndTime && selectedTopics.length > 0 && !scheduling
                     ? "pointer"
@@ -1125,7 +1146,7 @@ export default function FPScheduleCallModal({
                 }
               }}
             >
-              {scheduling ? "Scheduling..." : "Schedule Call"}
+              {scheduling ? "Scheduling..." : "Schedule"}
             </button>
           </div>
         </div>

@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import axios from "axios";
 import config from "../../common/config.ts";
+import {
+  generatePresignUrl,
+  uploadFileToS3,
+  sendCustomMessage,
+  fetchMessagesFromApi,
+} from "../services/chatApi.ts";
 import FPChatHeader from "./FPChatHeader";
 import FPChatTab from "./FPChatTab";
 import type { Connection } from "agora-chat";
@@ -123,7 +128,7 @@ export default function FPChatInterface({
   chatClient,
   onBackToConversations,
   onInitiateCall,
-  onScheduleClick,
+  onScheduleClick: _onScheduleClick,
   onSchedule,
   onUpdateLastMessageFromHistory,
   onMessagesLoadedFromHistory,
@@ -1613,7 +1618,6 @@ export default function FPChatInterface({
           // Update the existing message with new content and mark as edited
           // Ensure we're using the new content from the edited message
           const newContent = editedMsg.content || existingMsg.content;
-          const contentChanged = newContent !== existingMsg.content;
 
           const updatedMessage = {
             ...existingMsg,
@@ -2217,20 +2221,17 @@ export default function FPChatInterface({
       }/${Date.now()}-${safeFileName}`;
 
       // 1️⃣ Request pre-signed URL
-      const { data } = await axios.post(config.api.generatePresignUrl, {
+      const { url: uploadUrl, fileUrl } = await generatePresignUrl(
         objectKey,
-        expiresInMinutes: config.upload.expiresInMinutes,
-      });
-
-      const { url: uploadUrl, fileUrl } = data;
+        config.upload.expiresInMinutes
+      );
 
       // 2️⃣ Upload to S3
-      await axios.put(uploadUrl, file, {
-        headers: { "Content-Type": file.type },
-        onUploadProgress: (event) => {
-          const percent = event.total
-            ? Math.round((event.loaded * 100) / event.total)
-            : 0;
+      await uploadFileToS3({
+        file,
+        uploadUrl,
+        contentType: file.type,
+        onUploadProgress: (percent) => {
           setUploadProgress(percent);
         },
       });
@@ -2568,20 +2569,17 @@ export default function FPChatInterface({
       }/${Date.now()}-${safeFileName}`;
 
       // 1️⃣ Request pre-signed URL
-      const { data } = await axios.post(config.api.generatePresignUrl, {
+      const { url: uploadUrl, fileUrl } = await generatePresignUrl(
         objectKey,
-        expiresInMinutes: config.upload.expiresInMinutes,
-      });
-
-      const { url: uploadUrl, fileUrl } = data;
+        config.upload.expiresInMinutes
+      );
 
       // 2️⃣ Upload to S3
-      await axios.put(uploadUrl, audioFile, {
-        headers: { "Content-Type": audioBlob.type },
-        onUploadProgress: (event) => {
-          const percent = event.total
-            ? Math.round((event.loaded * 100) / event.total)
-            : 0;
+      await uploadFileToS3({
+        file: audioFile,
+        uploadUrl,
+        contentType: audioBlob.type,
+        onUploadProgress: (percent) => {
           setUploadProgress(percent);
         },
       });
@@ -2676,11 +2674,6 @@ export default function FPChatInterface({
         ? peerId
         : `user_${peerId}`;
 
-      // Prepare API fetch
-      const apiUrl = new URL(config.api.fetchMessages);
-      apiUrl.searchParams.append("conversationId", conversationId);
-      apiUrl.searchParams.append("limit", String(config.chat.pageSize || 20));
-
       // Cast chatClient to Connection type to access getHistoryMessages
       const client = chatClient as Connection & {
         getHistoryMessages?: (options: {
@@ -2706,12 +2699,15 @@ export default function FPChatInterface({
             })
           : Promise.resolve({ messages: [], cursor: undefined }),
         // Fetch from API
-        fetch(apiUrl.toString()).then(async (response) => {
-          if (!response.ok) {
-            throw new Error(`Failed to fetch messages: ${response.status}`);
-          }
-          return response.json();
-        }),
+        fetchMessagesFromApi({
+          conversationId: conversationId,
+          userId,
+          page: 1,
+          pageSize: config.chat.pageSize || 20,
+        }).then((data) => ({
+          messages: data.messages || [],
+          cursor: data.cursor,
+        })),
       ]);
 
       // Process Agora messages
@@ -2730,7 +2726,7 @@ export default function FPChatInterface({
       if (apiResult.status === "fulfilled") {
         const apiRes = apiResult.value;
         apiMessages = apiRes?.messages || [];
-        apiCursor = apiRes?.nextCursor;
+        apiCursor = apiRes?.cursor;
       } else {
       }
 
@@ -3224,14 +3220,6 @@ export default function FPChatInterface({
         ? peerId
         : `user_${peerId}`;
 
-      // Prepare API fetch
-      const apiUrl = new URL(config.api.fetchMessages);
-      apiUrl.searchParams.append("conversationId", conversationId);
-      apiUrl.searchParams.append("limit", "20");
-      if (cursor) {
-        apiUrl.searchParams.append("cursor", String(cursor));
-      }
-
       // Cast chatClient to Connection type to access getHistoryMessages
       const client = chatClient as Connection & {
         getHistoryMessages?: (options: {
@@ -3259,12 +3247,16 @@ export default function FPChatInterface({
             })
           : Promise.resolve({ messages: [], cursor: undefined }),
         // Fetch from API
-        fetch(apiUrl.toString()).then(async (response) => {
-          if (!response.ok) {
-            throw new Error(`Failed to fetch messages: ${response.status}`);
-          }
-          return response.json();
-        }),
+        fetchMessagesFromApi({
+          conversationId: conversationId,
+          userId,
+          page: 1,
+          pageSize: 20,
+          cursor: cursor ? String(cursor) : undefined,
+        }).then((data) => ({
+          messages: data.messages || [],
+          cursor: data.cursor,
+        })),
       ]);
 
       // Process Agora messages
@@ -3283,7 +3275,7 @@ export default function FPChatInterface({
       if (apiResult.status === "fulfilled") {
         const apiRes = apiResult.value;
         apiMessages = apiRes?.messages || [];
-        apiCursor = apiRes?.nextCursor;
+        apiCursor = apiRes?.cursor;
       } else {
       }
 
@@ -3698,17 +3690,19 @@ export default function FPChatInterface({
       // Send custom message for scheduled call canceled
       if (peerId && scheduledCallFromApi.call_date_time) {
         try {
-          const body = {
-            from: userId,
-            to: peerId,
-            type: "scheduled_call_canceled",
-            data: {
-              type: "scheduled_call_canceled",
-              time: scheduledCallFromApi.call_date_time, // Original scheduled time (epoch time in seconds)
+          await sendCustomMessage({
+            conversation_id: peerId || "",
+            from_user: userId,
+            to_user: peerId || "",
+            message_type: "custom",
+            body: {
+              messageType: "scheduled_call_canceled",
+              payload: {
+                type: "scheduled_call_canceled",
+                time: scheduledCallFromApi.call_date_time, // Original scheduled time (epoch time in seconds)
+              },
             },
-          };
-
-          await axios.post(config.api.customMessage, body);
+          });
         } catch (error) {
           console.error(
             "Error sending scheduled call canceled custom message:",

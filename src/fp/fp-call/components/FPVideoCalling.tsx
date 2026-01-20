@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import config from "../../common/config.ts";
 import { FPVideoCallingProps } from "../../common/types/call";
 import { shouldProceedWithRemoteUsers } from "../../fp-chat/utils/blockedUIDs";
+import { generateRtcToken } from "../services/rtcApi.ts";
 
 interface FPVideoCallingInnerProps extends FPVideoCallingProps {
   client: IAgoraRTCClient;
@@ -99,6 +100,8 @@ const FPVideoCallingInner = ({
   const recoveryAttemptsRef = useRef<
     Map<string | number, { audio: number; video: number }>
   >(new Map());
+  // Track video fallback attempts to prevent spam subscriptions
+  const videoFallbackAttemptedRef = useRef<Set<string | number>>(new Set());
 
   // Agora hooks
   // Always create microphone track (don't recreate when micOn changes)
@@ -121,7 +124,7 @@ const FPVideoCallingInner = ({
       getMediaStreamTrack?: () => MediaStreamTrack | null;
       getTrack?: () => MediaStreamTrack | null;
     } | null,
-    trackName: string
+    _trackName: string // Parameter kept for API compatibility but not used
   ): void => {
     if (!track) {
       return;
@@ -220,7 +223,7 @@ const FPVideoCallingInner = ({
             if (videoDevices.length > 0) {
             }
           })
-          .catch((err) => {});
+          .catch((_err) => {});
       }
 
       if (stoppedCount > 0) {
@@ -236,29 +239,8 @@ const FPVideoCallingInner = ({
   // Log all connected users details
   useEffect(() => {
     if (isConnected && calling) {
-      const localUserDetails = {
-        userId: userId,
-        uid: typeof uid === "number" ? uid : parseInt(String(uid), 10),
-        name: localUserName || userId,
-        photo: localUserPhoto || null,
-        hasAudio: localMicrophoneTrack ? true : false,
-        hasVideo: localCameraTrack ? true : false,
-        micOn: micOn,
-        cameraOn: cameraOn,
-        isLocal: true,
-      };
-
-      const remoteUsersDetails = remoteUsers.map((user) => ({
-        uid:
-          typeof user.uid === "number"
-            ? user.uid
-            : parseInt(String(user.uid), 10),
-        hasAudio: user.hasAudio || false,
-        hasVideo: user.hasVideo || false,
-        audioTrack: user.audioTrack ? "present" : "absent",
-        videoTrack: user.videoTrack ? "present" : "absent",
-        isLocal: false,
-      }));
+      // This effect ensures the component re-renders when connection state changes
+      // User details tracking can be added here if needed for logging/debugging
     }
   }, [
     isConnected,
@@ -1117,22 +1099,19 @@ const FPVideoCallingInner = ({
           }
         }
 
-        // Verify the track state after configuration
-        const trackState = {
-          enabled: localMicrophoneTrack.enabled,
-          muted: localMicrophoneTrack.muted,
-          hasTrack: !!localMicrophoneTrack,
-          micOn: micOn,
-          trackId: localMicrophoneTrack.getTrackId?.() || "unknown",
-          mediaStreamTrackReadyState: mediaStreamTrack?.readyState || "N/A",
-          mediaStreamTrackEnabled: mediaStreamTrack?.enabled ?? "N/A",
-          mediaStreamTrackMuted: mediaStreamTrack?.muted ?? "N/A",
-          // Check if track has constraints (indicates it's actually capturing)
-          mediaStreamTrackConstraints:
-            mediaStreamTrack?.getConstraints?.() || "N/A",
-          // Check track settings (shows actual state)
-          mediaStreamTrackSettings: mediaStreamTrack?.getSettings?.() || "N/A",
-        };
+        // Track state verification - can be used for debugging if needed
+        // const trackState = {
+        //   enabled: localMicrophoneTrack.enabled,
+        //   muted: localMicrophoneTrack.muted,
+        //   hasTrack: !!localMicrophoneTrack,
+        //   micOn: micOn,
+        //   trackId: localMicrophoneTrack.getTrackId?.() || "unknown",
+        //   mediaStreamTrackReadyState: mediaStreamTrack?.readyState || "N/A",
+        //   mediaStreamTrackEnabled: mediaStreamTrack?.enabled ?? "N/A",
+        //   mediaStreamTrackMuted: mediaStreamTrack?.muted ?? "N/A",
+        //   mediaStreamTrackConstraints: mediaStreamTrack?.getConstraints?.() || "N/A",
+        //   mediaStreamTrackSettings: mediaStreamTrack?.getSettings?.() || "N/A",
+        // };
 
         // CRITICAL: Verify the track is actually ready to send audio
         if (micOn && mediaStreamTrack) {
@@ -1259,15 +1238,15 @@ const FPVideoCallingInner = ({
           }
         }
 
-        // Verify the track state
-        const trackState = {
-          enabled: localCameraTrack.enabled,
-          hasTrack: !!localCameraTrack,
-          cameraOn: cameraOn,
-          trackId: localCameraTrack.getTrackId?.() || "unknown",
-          mediaStreamTrackReadyState: mediaStreamTrack?.readyState || "N/A",
-          mediaStreamTrackEnabled: mediaStreamTrack?.enabled ?? "N/A",
-        };
+        // Track state verification - can be used for debugging if needed
+        // const trackState = {
+        //   enabled: localCameraTrack.enabled,
+        //   hasTrack: !!localCameraTrack,
+        //   cameraOn: cameraOn,
+        //   trackId: localCameraTrack.getTrackId?.() || "unknown",
+        //   mediaStreamTrackReadyState: mediaStreamTrack?.readyState || "N/A",
+        //   mediaStreamTrackEnabled: mediaStreamTrack?.enabled ?? "N/A",
+        // };
 
         // If track is not in correct state, retry
         if (cameraOn && !localCameraTrack.enabled && retryCount < maxRetries) {
@@ -1313,33 +1292,16 @@ const FPVideoCallingInner = ({
     isGeneratingTokenRef.current = true;
     setGeneratingToken(true);
     try {
-      const response = await fetch(config.rtcToken.apiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          channelName: channel,
-          uid: uid,
-          expireSecs: 3600,
-          role: "publisher",
-        }),
+      const newToken = await generateRtcToken({
+        channelName: channel,
+        uid: uid,
+        expireSecs: 3600,
+        role: "publisher",
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to generate token: ${response.statusText}`);
-      }
-
-      const data = (await response.json()) as { token?: string };
-      if (data.token) {
-        const newToken = data.token;
-        setToken(newToken);
-        isGeneratingTokenRef.current = false;
-        setGeneratingToken(false);
-        return newToken;
-      } else {
-        throw new Error("Token not found in response");
-      }
+      setToken(newToken);
+      isGeneratingTokenRef.current = false;
+      setGeneratingToken(false);
+      return newToken;
     } catch (error) {
       isGeneratingTokenRef.current = false;
       setGeneratingToken(false);

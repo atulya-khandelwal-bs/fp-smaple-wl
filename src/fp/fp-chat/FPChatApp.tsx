@@ -12,6 +12,10 @@ import { Contact, Message, LogEntry } from "../common/types/chat";
 import { CallEndData } from "../common/types/call";
 import type { MessageBody } from "agora-chat";
 import { fetchDietitianDetails } from "./services/dietitianApi";
+import {
+  generateChatToken,
+  registerUser as registerUserApi,
+} from "./services/chatApi";
 
 interface FPChatAppProps {
   userId: string;
@@ -21,6 +25,19 @@ interface FPChatAppProps {
   designation?: string; // Optional: fallback designation (will be replaced by API dietitian_profile)
   onLogout?: () => void;
 }
+
+interface ActiveCall {
+  userId: string;
+  peerId: string;
+  channel: string;
+  isInitiator: boolean;
+  callType: "video" | "audio";
+  localUserName: string;
+  localUserPhoto?: string;
+  peerName: string;
+  peerAvatar?: string;
+}
+
 
 interface ActiveCall {
   userId: string;
@@ -104,26 +121,10 @@ function FPChatApp({
 
     try {
       addLog(`Renewing chat token for ${userId}...`);
-      const tokenResponse = await fetch(config.api.generateToken, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username: userId,
-          expireInSecs: config.token.expireInSecs,
-        }),
-      });
-
-      if (!tokenResponse.ok) {
-        const errorData = await tokenResponse.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `Token generation failed: ${tokenResponse.status}`
-        );
-      }
-
-      const tokenData = await tokenResponse.json();
-      const newToken = tokenData.token;
+      const newToken = await generateChatToken(
+        userId,
+        config.token.expireInSecs
+      );
       setToken(newToken); // Update token state
       addLog(`Chat token renewed successfully`);
       return newToken;
@@ -462,28 +463,10 @@ function FPChatApp({
     setIsGeneratingToken(true);
     try {
       addLog(`Generating chat token for ${userId}...`);
-      const tokenResponse = await fetch(config.api.generateToken, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username: userId,
-          expireInSecs: config.token.expireInSecs,
-        }),
-      });
-
-      if (!tokenResponse.ok) {
-        const errorData = await tokenResponse.json().catch(() => ({}));
-        const errorMessage =
-          errorData.error || `Token generation failed: ${tokenResponse.status}`;
-        addLog(`Token generation failed: ${errorMessage}`);
-        setIsGeneratingToken(false);
-        return null;
-      }
-
-      const tokenData = await tokenResponse.json();
-      const newToken = tokenData.token;
+      const newToken = await generateChatToken(
+        userId,
+        config.token.expireInSecs
+      );
       setToken(newToken);
       addLog(`Chat token generated successfully`);
       setIsGeneratingToken(false);
@@ -680,48 +663,20 @@ function FPChatApp({
   // Register a user with Agora (called when selecting a user)
   const registerUser = async (username: string): Promise<boolean> => {
     try {
-      const endpoint = config.api.registerUserEndpoint;
-      const requestBody = { username: username };
-
       addLog(`Registering user ${username}...`);
-
-      const registerResponse = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (registerResponse.ok) {
-        await registerResponse.json().catch(() => ({})); // Consume response body
-        addLog(`User ${username} registered successfully`);
-        return true;
-      } else {
-        // User might already be registered
-        const errorData = await registerResponse.json().catch(() => ({}));
-
-        if (
-          registerResponse.status === 400 ||
-          registerResponse.status === 409
-        ) {
-          addLog(`User ${username} already exists, proceeding...`);
-          return true; // User exists, can proceed
-        } else {
-          addLog(
-            `Registration warning: ${
-              errorData.error || registerResponse.status
-            }`
-          );
-          return false;
-        }
-      }
+      await registerUserApi(username);
+      addLog(`User ${username} registered successfully`);
+      return true;
     } catch (registerError) {
       const errorMessage =
         registerError instanceof Error
           ? registerError.message
           : String(registerError);
-      // console.error("❌ [REGISTER API] Registration error:", registerError);
+      // Check if it's a "user already exists" scenario - we can proceed
+      if (errorMessage.includes("400") || errorMessage.includes("409")) {
+        addLog(`User ${username} already exists, proceeding...`);
+        return true;
+      }
       addLog(`Registration error: ${errorMessage}`);
       return false;
     }
