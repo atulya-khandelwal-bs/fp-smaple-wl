@@ -42,6 +42,16 @@ export default function FPChatTab({
           const items: React.JSX.Element[] = [];
           let lastDayKey: string | null = null;
 
+          // Find the last non-system message to determine which message should show the SVG
+          let lastNonSystemMessageIndex = -1;
+          for (let i = currentConversationMessages.length - 1; i >= 0; i--) {
+            const msg = currentConversationMessages[i];
+            if (!(msg.messageType === "system" && msg.system)) {
+              lastNonSystemMessageIndex = i;
+              break;
+            }
+          }
+
           currentConversationMessages.forEach((msg, index) => {
             const createdAt = msg.createdAt
               ? new Date(msg.createdAt)
@@ -72,6 +82,7 @@ export default function FPChatTab({
             if (msg.messageType === "system" && msg.system) {
               items.push(<FPSystemMessage key={msg.id} msg={msg} />);
             } else {
+              const isLastMessage = index === lastNonSystemMessageIndex;
               items.push(
                 <FPMessageBubble
                   key={msg.id}
@@ -82,6 +93,7 @@ export default function FPChatTab({
                   currentlyPlayingAudioRef={currentlyPlayingAudioRef}
                   formatCurrency={formatCurrency}
                   onPlayVideo={onPlayVideo}
+                  isLastMessage={isLastMessage}
                 />
               );
             }

@@ -456,14 +456,12 @@ input {
 
 .message-wrapper.incoming .message-bubble {
   background: #e5e7eb;
-  border-radius: 12px 12px 12px 4px;
   margin-left: 8px;
 }
 
 .message-wrapper.outgoing .message-bubble {
   background: #109310;
   color: #ffffff;
-  border-radius: 12px 12px 4px 12px;
   margin-right: 8px;
 }
 

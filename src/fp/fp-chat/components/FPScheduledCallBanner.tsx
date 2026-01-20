@@ -228,8 +228,8 @@ export default function FPScheduledCallBanner({
       >
         <span
           style={{
-            fontSize: "14px",
-            fontWeight: 500,
+            fontSize: "12px",
+            fontWeight: 600,
             color: "#109310",
           }}
         >
@@ -240,7 +240,7 @@ export default function FPScheduledCallBanner({
             fontSize: "14px",
             color: "#0A1F34",
             opacity: 0.9,
-            fontWeight: 700,
+            fontWeight: 600,
           }}
         >
           {dateTimeText}

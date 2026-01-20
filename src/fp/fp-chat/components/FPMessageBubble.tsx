@@ -21,6 +21,7 @@ interface FPMessageBubbleProps {
     videoUrl: string,
     callType?: "video_call" | "voice_call"
   ) => void;
+  isLastMessage?: boolean;
 }
 
 export default function FPMessageBubble({
@@ -31,6 +32,7 @@ export default function FPMessageBubble({
   currentlyPlayingAudioRef,
   formatCurrency,
   onPlayVideo,
+  isLastMessage = false,
 }: FPMessageBubbleProps): React.JSX.Element {
   const renderMessageContent = (): React.JSX.Element => {
     if (msg.messageType === "image" && (msg.imageData || msg.imageUrl)) {
@@ -377,7 +379,7 @@ export default function FPMessageBubble({
           }}
         >
           {renderMessageContent()}
-          {!msg.isIncoming && (
+          {isLastMessage && !msg.isIncoming && (
             <svg
               width="18"
               height="18"
@@ -397,7 +399,7 @@ export default function FPMessageBubble({
               />
             </svg>
           )}
-          {msg.isIncoming && (
+          {isLastMessage && msg.isIncoming && (
             <svg
               width="18"
               height="18"

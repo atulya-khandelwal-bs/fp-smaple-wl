@@ -480,7 +480,7 @@ export default function FPProfileModal({
               <div
                 style={{
                   marginBottom: "1.5rem",
-                  textAlign: "center",
+                  textAlign: "left",
                 }}
               >
                 <p
@@ -494,9 +494,9 @@ export default function FPProfileModal({
                   Your call has been scheduled with{" "}
                   <strong>
                     {dietitianData?.result?.dietitian_details?.dietitian_name ||
-                      selectedContact.name}
-                  </strong>{" "}
-                  at {formatScheduledDateTime()}
+                      selectedContact.name}{" "}
+                    at {formatScheduledDateTime()}
+                  </strong>
                 </p>
               </div>
 
@@ -516,7 +516,7 @@ export default function FPProfileModal({
                     padding: "0.875rem 2rem",
                     border: "none",
                     borderRadius: "8px",
-                    backgroundColor: "#dc2626",
+                    backgroundColor: "#DC4144",
                     color: "#ffffff",
                     fontSize: "16px",
                     fontWeight: 600,
@@ -545,7 +545,7 @@ export default function FPProfileModal({
                   padding: "0.875rem 2rem",
                   border: "none",
                   borderRadius: "8px",
-                  backgroundColor: "#dc2626",
+                  backgroundColor: "#DC4144",
                   color: "#ffffff",
                   fontSize: "16px",
                   fontWeight: 600,

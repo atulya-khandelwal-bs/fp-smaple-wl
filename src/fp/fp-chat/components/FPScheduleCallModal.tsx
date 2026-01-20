@@ -515,11 +515,14 @@ export default function FPScheduleCallModal({
                 fontSize: "16px",
                 color: "#111827",
                 lineHeight: "1.5",
-                textAlign: "center",
+                textAlign: "left",
               }}
             >
-              Your call has been scheduled with {dietitianName} at{" "}
-              {scheduledDateTimeText}
+              Your call has been scheduled with{" "}
+              <strong>
+                {" "}
+                {dietitianName} at {scheduledDateTimeText}
+              </strong>
             </div>
 
             {/* Cancel Call Button */}
@@ -538,7 +541,7 @@ export default function FPScheduleCallModal({
                   padding: "0.875rem 2rem",
                   border: "none",
                   borderRadius: "8px",
-                  backgroundColor: "#dc2626",
+                  backgroundColor: "#DC4144",
                   color: "#ffffff",
                   fontSize: "16px",
                   fontWeight: 600,
@@ -756,10 +759,12 @@ export default function FPScheduleCallModal({
                 gap: "0.5rem",
                 overflowX: "auto",
                 overflowY: "hidden",
-                paddingBottom: "0.5rem",
+                paddingBottom: "0.25rem",
                 scrollbarWidth: "none",
                 msOverflowStyle: "none",
                 WebkitOverflowScrolling: "touch",
+                borderBottom: "1px solid #E7E9EB",
+                position: "relative",
               }}
               onWheel={(e) => {
                 e.preventDefault();
@@ -771,65 +776,87 @@ export default function FPScheduleCallModal({
                   selectedDate !== null &&
                   dateItem.date.toDateString() === selectedDate.toDateString();
                 return (
-                  <button
+                  <div
                     key={index}
-                    onClick={() => setSelectedDate(dateItem.date)}
                     style={{
-                      width: "69px",
-                      height: "56px",
-                      padding: "0.5rem 0.75rem",
-                      border: "none",
-                      borderRadius: "8px",
-                      backgroundColor: "transparent",
-                      cursor: "pointer",
-                      minWidth: "fit-content",
                       display: "flex",
                       flexDirection: "column",
                       alignItems: "center",
-                      gap: "0.25rem",
-                      transition: "all 0.2s",
-                      position: "relative",
                     }}
                   >
-                    {/* Day of the week */}
-                    <div
+                    <button
+                      onClick={() => setSelectedDate(dateItem.date)}
                       style={{
-                        fontSize: "10px",
-                        fontWeight: 700,
-                        color: "#0A1F34",
-                        opacity: 0.6,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.5px",
-                      }}
-                    >
-                      {dateItem.dayLabel}
-                    </div>
-                    {/* Date number */}
-                    <div
-                      style={{
-                        fontSize: "14px",
-                        fontWeight: 700,
-                        color: "#0A1F34",
-                        lineHeight: "1",
-                      }}
-                    >
-                      {dateItem.dayNumber}
-                    </div>
-                    {/* Month with underline for selected */}
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#0A1F34",
+                        width: "69px",
+                        height: "56px",
+                        padding: 0,
+                        border: "none",
+                        borderRadius: "8px",
+                        backgroundColor: "transparent",
+                        cursor: "pointer",
+                        minWidth: "fit-content",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: "0.25rem",
+                        transition: "all 0.2s",
                         position: "relative",
-                        paddingBottom: "2px",
-
-                        transition: "border-color 0.2s",
                       }}
                     >
-                      {dateItem.month}
-                    </div>
-                  </button>
+                      {/* Day of the week */}
+                      <div
+                        style={{
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          color: "#0A1F34",
+                          opacity: 0.6,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        {dateItem.dayLabel}
+                      </div>
+                      {/* Date number */}
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: 700,
+                          color: "#0A1F34",
+                          lineHeight: "1",
+                        }}
+                      >
+                        {dateItem.dayNumber}
+                      </div>
+                      {/* Month with underline for selected */}
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#0A1F34",
+                          position: "relative",
+                          paddingBottom: "2px",
+
+                          transition: "border-color 0.2s",
+                        }}
+                      >
+                        {dateItem.month}
+                      </div>
+                    </button>
+                    {/* Selection indicator below date */}
+                    {isSelected && (
+                      <div
+                        style={{
+                          width: "69.2px",
+                          height: "4px",
+                          backgroundColor: "#DC4144",
+                          borderTopLeftRadius: "100px",
+                          borderTopRightRadius: "100px",
+                          marginTop: "0.25rem",
+                          marginBottom: "-4px",
+                        }}
+                      />
+                    )}
+                  </div>
                 );
               })}
             </div>
