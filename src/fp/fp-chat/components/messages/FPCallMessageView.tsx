@@ -51,133 +51,105 @@ export default function FPCallMessageView({
 
   return (
     <div
+      onClick={videoUrl && onPlayVideo ? handlePlayVideo : undefined}
       style={{
         display: "flex",
-        flexDirection: "column",
+        alignItems: "center",
+        gap: "12px",
+        height: "54px",
+        padding: "10px",
         width: "100%",
         borderRadius: "8px",
-        overflow: "hidden",
-        background: "#f3f4f6",
-        // border: "1px solid #e5e7eb",
+        background: "#e5e7eb",
+        cursor: videoUrl && onPlayVideo ? "pointer" : "default",
+        transition: "background 0.2s",
+      }}
+      onMouseEnter={(e) => {
+        if (videoUrl && onPlayVideo) {
+          e.currentTarget.style.background = "#e5e7eb";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (videoUrl && onPlayVideo) {
+          e.currentTarget.style.background = "#f3f4f6";
+        }
       }}
     >
-      {/* Top Section: Icon, Title, and Duration */}
+      {/* Icon with circular background */}
+      <div
+        style={{
+          width: "25px",
+          height: "25px",
+          borderRadius: "50%",
+          background: "#109310",
+          color: "#FFFFFF",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        {icons_details?.left_icon ? (
+          <img
+            src={validateImageUrl(icons_details.left_icon, "icon")}
+            alt="Call icon"
+            style={{
+              width: "20px",
+              height: "20px",
+            }}
+          />
+        ) : (
+          <div>
+            {isVideoCall ? (
+              <Video
+                size={12}
+                style={{
+                  color: "",
+                }}
+              />
+            ) : (
+              <Phone
+                size={12}
+                style={{
+                  color: "",
+                }}
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Title and Duration */}
       <div
         style={{
           display: "flex",
-          alignItems: "center",
-          gap: "12px",
-          padding: "12px",
+          flexDirection: "column",
+          gap: "4px",
+          flex: 1,
         }}
       >
-        {/* Icon with circular background */}
-        <div
+        <span
           style={{
-            width: "40px",
-            height: "40px",
-            borderRadius: "50%",
-            background: "#ffffff",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
+            fontWeight: 600,
+            color: "#111827",
+            fontSize: "14px",
+            textAlign: "left",
           }}
         >
-          {icons_details?.left_icon ? (
-            <img
-              src={validateImageUrl(icons_details.left_icon, "icon")}
-              alt="Call icon"
-              style={{
-                width: "20px",
-                height: "20px",
-              }}
-            />
-          ) : (
-            <div>
-              {isVideoCall ? (
-                <Video
-                  size={20}
-                  style={{
-                    color: "",
-                  }}
-                />
-              ) : (
-                <Phone
-                  size={20}
-                  style={{
-                    color: "",
-                  }}
-                />
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Title and Duration */}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "4px",
-            flex: 1,
-          }}
-        >
+          {displayTitle}
+        </span>
+        {displayDescription && (
           <span
             style={{
-              fontWeight: 600,
-              color: "#111827",
-              fontSize: "14px",
+              fontSize: "12px",
+              color: "#6b7280",
+              textAlign: "left",
             }}
           >
-            {displayTitle}
+            {displayDescription}
           </span>
-          {displayDescription && (
-            <span
-              style={{
-                fontSize: "12px",
-                color: "#6b7280",
-              }}
-            >
-              {displayDescription}
-            </span>
-          )}
-        </div>
+        )}
       </div>
-
-      {/* Bottom Section: Play Recording Button - Show for both video and voice calls if URL exists */}
-      {videoUrl && onPlayVideo && (
-        <div
-          style={{
-            background: "#e5e7eb",
-            padding: "12px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <button
-            onClick={handlePlayVideo}
-            style={{
-              background: "transparent",
-              border: "none",
-              fontSize: "14px",
-              fontWeight: 500,
-              cursor: "pointer",
-              padding: 0,
-              transition: "opacity 0.2s",
-              color: "#000",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = "0.8";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = "1";
-            }}
-          >
-            {isVideoCall ? "Play Video Recording" : "Play Audio Recording"}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

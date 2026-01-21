@@ -79,6 +79,16 @@ export default function FPChatHeader({
                   width: "100%",
                   height: "100%",
                   objectFit: "cover",
+                  display: "block",
+                }}
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  if (target.src !== config.defaults.avatar) {
+                    target.src = config.defaults.avatar;
+                  } else {
+                    // If default avatar also fails, hide the image
+                    target.style.display = "none";
+                  }
                 }}
               />
             </div>

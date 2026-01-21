@@ -80,40 +80,103 @@ export default function FPProductMessageView({
                   minWidth: "80px",
                   borderRadius: "8px",
                   overflow: "hidden",
-                  background: "#FFFFFF",
+                  background: "#F3F4F6",
                   border: "1px solid #E5E7EB",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   flexShrink: 0,
+                  position: "relative",
                 }}
               >
                 {productImage ? (
-                  <img
-                    src={productImage}
-                    alt={productName}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                    }}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
+                  <>
+                    <img
+                      src={productImage}
+                      alt={productName}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        display: "block",
+                      }}
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = "none";
+                        const parent = target.parentElement;
+                        if (parent) {
+                          const placeholder = parent.querySelector(
+                            ".product-image-placeholder"
+                          ) as HTMLElement;
+                          if (placeholder) {
+                            placeholder.style.display = "flex";
+                          }
+                        }
+                      }}
+                    />
+                    <div
+                      className="product-image-placeholder"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        display: "none",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#9CA3AF",
+                        fontSize: "24px",
+                      }}
+                    >
+                      <svg
+                        width="32"
+                        height="32"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        style={{ marginBottom: "4px" }}
+                      >
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      <span style={{ fontSize: "10px", fontWeight: 500 }}>
+                        No Image
+                      </span>
+                    </div>
+                  </>
                 ) : (
                   <div
                     style={{
                       width: "100%",
                       height: "100%",
                       display: "flex",
+                      flexDirection: "column",
                       alignItems: "center",
                       justifyContent: "center",
                       color: "#9CA3AF",
-                      fontSize: "12px",
+                      fontSize: "24px",
                     }}
                   >
-                    No Image
+                    <svg
+                      width="32"
+                      height="32"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      style={{ marginBottom: "4px" }}
+                    >
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    <span style={{ fontSize: "10px", fontWeight: 500 }}>
+                      No Image
+                    </span>
                   </div>
                 )}
               </div>

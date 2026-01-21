@@ -1,5 +1,5 @@
 import React, { useEffect, RefObject, KeyboardEvent } from "react";
-import { Smile, Plus, Send, Mic, X } from "lucide-react";
+import { Smile, Plus, Send, Mic, X, SendHorizonal } from "lucide-react";
 import "emoji-picker-element";
 import { DraftAttachment, Contact } from "../../common/types/chat";
 
@@ -168,30 +168,65 @@ export default function FPMessageInput({
 
   return (
     <div className="input-container">
-      <div className="input-wrapper">
-        <div className="input-with-icons">
-          {/* Plus Icon on Left */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          padding: "0.5rem",
+        }}
+      >
+        {/* Plus Icon Button - Red Circular */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
           <button
             className="icon-btn plus-btn"
             disabled={!selectedContact}
             onClick={onToggleMediaPopup}
             title="Attach media"
             style={{
-              background: "none",
+              width: "40px",
+              height: "40px",
+              borderRadius: "50%",
+              background: "#DC4144",
               border: "none",
-              cursor: "pointer",
-              padding: "0.5rem",
+              cursor: selectedContact ? "pointer" : "not-allowed",
+              padding: 0,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "var(--text)",
+              color: "#FFFFFF",
               flexShrink: 0,
+              transition: "opacity 0.2s",
+            }}
+            onMouseEnter={(e) => {
+              if (selectedContact) {
+                e.currentTarget.style.opacity = "0.9";
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = "1";
             }}
           >
-            <Plus size={24} />
+            <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
           </button>
+        </div>
 
-          {/* Input Field */}
+        {/* Input Field - Light Grey Rounded */}
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            flexShrink: 1,
+          }}
+        >
           <input
             ref={inputRef}
             type="text"
@@ -201,7 +236,7 @@ export default function FPMessageInput({
                 ? "Add a caption (optional)"
                 : draftAttachment
                 ? "Add a caption (optional)"
-                : "Type a message"
+                : "Write a message..."
             }
             value={
               draftAttachment && draftAttachment.type !== "audio"
@@ -237,15 +272,27 @@ export default function FPMessageInput({
             disabled={!selectedContact}
             autoFocus
             style={{
-              flex: 1,
+              width: "100%",
               border: "none",
               outline: "none",
-              padding: "0.75rem",
-              fontSize: "1rem",
+              padding: "0.75rem 1rem",
+              fontSize: "0.875rem",
+              background: "#F3F4F6",
+              borderRadius: "24px",
+              color: "#111827",
             }}
           />
+        </div>
 
-          {/* Send/Mic Icon on Right */}
+        {/* Send/Mic Icon Button - Dark Blue Circular */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
           {shouldShowSend ? (
             <button
               className="icon-btn send-icon-btn"
@@ -261,18 +308,37 @@ export default function FPMessageInput({
               disabled={!selectedContact || (!draftAttachment && !hasText)}
               title="Send message"
               style={{
-                background: "none",
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                background: "#DC4144",
                 border: "none",
-                cursor: "pointer",
-                padding: "0.5rem",
+                cursor:
+                  selectedContact && (draftAttachment || hasText)
+                    ? "pointer"
+                    : "not-allowed",
+                padding: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "var(--text)",
+                color: "#FFFFFF",
                 flexShrink: 0,
+                transition: "opacity 0.2s",
+                opacity:
+                  selectedContact && (draftAttachment || hasText) ? 1 : 0.5,
+              }}
+              onMouseEnter={(e) => {
+                if (selectedContact && (draftAttachment || hasText)) {
+                  e.currentTarget.style.opacity = "0.9";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (selectedContact && (draftAttachment || hasText)) {
+                  e.currentTarget.style.opacity = "1";
+                }
               }}
             >
-              <Send size={24} />
+              <SendHorizonal size={20} color="#FFFFFF" strokeWidth={2.5} />
             </button>
           ) : (
             <button
@@ -292,18 +358,34 @@ export default function FPMessageInput({
               }}
               title="Hold to record audio"
               style={{
-                background: "none",
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                background: "#0A1F34",
                 border: "none",
-                cursor: "pointer",
-                padding: "0.5rem",
+                cursor:
+                  selectedContact && !isRecording ? "pointer" : "not-allowed",
+                padding: 0,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "var(--text)",
+                color: "#FFFFFF",
                 flexShrink: 0,
+                transition: "opacity 0.2s",
+                opacity: selectedContact && !isRecording ? 1 : 0.5,
+              }}
+              onMouseEnter={(e) => {
+                if (selectedContact && !isRecording) {
+                  e.currentTarget.style.opacity = "0.9";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (selectedContact && !isRecording) {
+                  e.currentTarget.style.opacity = "1";
+                }
               }}
             >
-              <Mic size={24} />
+              <Mic size={20} color="#FFFFFF" strokeWidth={2.5} />
             </button>
           )}
         </div>

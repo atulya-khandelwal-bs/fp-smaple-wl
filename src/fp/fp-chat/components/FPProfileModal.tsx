@@ -5,6 +5,7 @@ import {
   fetchDietitianDetails,
   type DietitianApiResponse,
 } from "../services/dietitianApi";
+import config from "../../common/config.ts";
 
 interface FPProfileModalProps {
   isOpen: boolean;
@@ -263,15 +264,22 @@ export default function FPProfileModal({
                       height: "100%",
                       borderRadius: "50%",
                       objectFit: "cover",
-                      display: imageError ? "none" : "block",
+                      display: "block",
                     }}
                     onLoad={() => {
                       setImageLoading(false);
                       setImageError(false);
                     }}
-                    onError={() => {
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
                       setImageLoading(false);
-                      setImageError(true);
+                      if (target.src !== config.defaults.avatar) {
+                        target.src = config.defaults.avatar;
+                        setImageError(false);
+                      } else {
+                        setImageError(true);
+                        target.style.display = "none";
+                      }
                     }}
                   />
                   {/* Loading spinner - centered by flexbox */}

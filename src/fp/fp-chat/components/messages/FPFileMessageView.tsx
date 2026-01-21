@@ -1,6 +1,4 @@
 import React from "react";
-import { Download } from "lucide-react";
-import { validateImageUrl } from "../../utils/imageValidator";
 
 interface FPFileMessageViewProps {
   fileUrl?: string;
@@ -8,6 +6,7 @@ interface FPFileMessageViewProps {
   fileMime?: string;
   fileSizeBytes?: number;
   fileSize?: string;
+  isIncoming?: boolean;
   icons_details?: {
     left_icon?: string;
     right_icon?: string;
@@ -29,7 +28,8 @@ export default function FPFileMessageView({
   fileMime,
   fileSizeBytes,
   fileSize,
-  icons_details,
+  isIncoming = false,
+  icons_details: _icons_details,
   redirection_details,
 }: FPFileMessageViewProps): React.JSX.Element {
   // Get first redirect URL if available (use it if fileUrl is not available)
@@ -51,11 +51,17 @@ export default function FPFileMessageView({
   // Format file size
   const formatFileSize = (): string => {
     if (fileSizeBytes != null) {
-      const kb = Math.round(fileSizeBytes / 1024);
+      if (fileSizeBytes < 1024) {
+        // Less than 1 KB - show in bytes
+        return `${fileSizeBytes} B`;
+      }
+      const kb = fileSizeBytes / 1024;
       if (kb >= 1024) {
+        // 1 MB or more
         return `${(kb / 1024).toFixed(1)} MB`;
       }
-      return `${kb} KB`;
+      // Between 1 KB and 1 MB
+      return `${Math.round(kb)} KB`;
     }
     if (fileSize) {
       return `${fileSize} KB`;
@@ -76,167 +82,161 @@ export default function FPFileMessageView({
     return name;
   })();
 
+  const fileSizeText = formatFileSize();
+  const sizeAndTypeText = fileSizeText
+    ? `${fileSizeText} ${fileTypeLabel}`
+    : fileTypeLabel;
+
+  // Colors based on incoming/outgoing
+  const bgColor = isIncoming ? "#E5E7EB" : "#109310";
+  const textColor = isIncoming ? "#111827" : "#FFFFFF";
+  const iconColor = isIncoming ? "#000" : "#FFFFFF";
+  const iconFill = isIncoming ? "#E5E7EB" : "white";
+
   return (
     <div
       style={{
         display: "flex",
-        flexDirection: "column",
-        gap: "8px",
-        maxWidth: 380,
-        cursor: redirectUrl && !fileUrl ? "pointer" : "default",
+        alignItems: "center",
+        gap: "12px",
+        padding: "12px",
+        background: bgColor,
+        borderRadius: "8px",
+        maxWidth: "380px",
+        border: isIncoming ? "1px solid #E5E7EB" : "none",
+        cursor:
+          redirectUrl && !fileUrl ? "pointer" : fileUrl ? "pointer" : "default",
       }}
-      onClick={redirectUrl && !fileUrl ? handleClick : undefined}
+      onClick={
+        redirectUrl && !fileUrl
+          ? handleClick
+          : fileUrl
+          ? () => {
+              const link = document.createElement("a");
+              link.href = fileUrl;
+              if (fileName) {
+                link.download = fileName;
+              }
+              link.target = "_blank";
+              link.rel = "noreferrer";
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }
+          : undefined
+      }
     >
-      {/* First row: File name */}
+      {/* Document Icon */}
       <div
         style={{
-          fontWeight: 600,
-          color: "#0f172a",
-          fontSize: "14px",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
+          width: "40px",
+          height: "40px",
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: iconColor,
         }}
-        title={fileName || fileUrl || "File"}
       >
-        {fileUrl ? (
-          <a
-            href={fileUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              color: "#2563eb",
-              textDecoration: "none",
-            }}
-            download={fileName || undefined}
-          >
-            {displayFileName}
-          </a>
-        ) : (
-          displayFileName
-        )}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <defs>
+            <mask id={`fileFoldCut-${isIncoming ? "in" : "out"}`}>
+              <rect width="24" height="24" fill="white" />
+              {/* Cut part (more vertical, less horizontal) */}
+              <path d="M14 2v7h5z" fill="black" />
+            </mask>
+          </defs>
+
+          {/* Filled file body WITH CUT FOLD */}
+          <path
+            d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"
+            fill={iconFill}
+            mask={`url(#fileFoldCut-${isIncoming ? "in" : "out"})`}
+          />
+
+          {/* Outline */}
+          <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+
+          {/* Fold line (match reduced horizontal size) */}
+          <path d="M14 2v6a1 1 0 0 0 1 1h4" />
+        </svg>
       </div>
 
-      {/* Second row: File type (left) and Download icon + File size (right) */}
+      {/* File Info Text */}
       <div
         style={{
+          flex: 1,
           display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
+          flexDirection: "column",
+          gap: "4px",
+          minWidth: 0,
         }}
       >
-        {/* Left side: Left icon (if provided) or File type */}
+        {/* File name */}
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
+            fontSize: "12px",
+            fontWeight: 600,
+            color: textColor,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={fileName || fileUrl || "File"}
+        >
+          {displayFileName}
+        </div>
+        {/* File size and type */}
+        <div
+          style={{
+            fontSize: "12px",
+            fontWeight: 500,
+            color: textColor,
+            textAlign: "left",
           }}
         >
-          {/* Left Icon */}
-          {icons_details?.left_icon ? (
-            <img
-              src={validateImageUrl(icons_details.left_icon, "icon")}
-              alt="Left icon"
-              style={{
-                width: "18px",
-                height: "18px",
-                flexShrink: 0,
-              }}
-            />
-          ) : null}
-
-          {/* File type badge */}
-          <div
-            aria-hidden
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              background: "#fee2e2", // light red
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#b91c1c",
-              fontWeight: 700,
-              fontSize: 12,
-            }}
-          >
-            {fileTypeLabel}
-          </div>
+          {sizeAndTypeText}
         </div>
-
-        {/* Right side: File size, Right icon (if provided), and Download icon */}
-        {fileUrl && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}
-          >
-            {/* File size */}
-            {formatFileSize() && (
-              <span
-                style={{
-                  fontSize: "12px",
-                  color: "#6b7280",
-                }}
-              >
-                {formatFileSize()}
-              </span>
-            )}
-
-            {/* Right Icon */}
-            {icons_details?.right_icon && (
-              <img
-                src={icons_details.right_icon}
-                alt="Right icon"
-                style={{
-                  width: "18px",
-                  height: "18px",
-                  flexShrink: 0,
-                }}
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
-            )}
-
-            {/* Download icon */}
-            <a
-              href={fileUrl}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: "24px",
-                height: "24px",
-                borderRadius: "4px",
-                background: "#f3f4f6",
-                color: "#374151",
-                textDecoration: "none",
-                cursor: "pointer",
-                transition: "all 0.2s",
-              }}
-              title="Download"
-              download={fileName || undefined}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.background =
-                  "#e5e7eb";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.background =
-                  "#f3f4f6";
-              }}
-            >
-              <Download size={14} />
-            </a>
-          </div>
-        )}
       </div>
+
+      {/* Download Icon */}
+      {fileUrl && (
+        <div
+          style={{
+            width: "24px",
+            height: "24px",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={iconColor}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </div>
+      )}
     </div>
   );
 }

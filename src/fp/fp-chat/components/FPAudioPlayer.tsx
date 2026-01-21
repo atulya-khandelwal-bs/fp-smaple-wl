@@ -101,7 +101,7 @@ export default function FPAudioPlayer({
         }}
       >
         {/* Close button */}
-        <button
+        <div
           onClick={onClose}
           style={{
             position: "absolute",
@@ -120,15 +120,9 @@ export default function FPAudioPlayer({
             zIndex: 10,
             transition: "background 0.2s",
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.2)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.1)";
-          }}
         >
-          <X size={20} />
-        </button>
+          <X size={20} color="#ffffff" strokeWidth={2.5} />
+        </div>
 
         {/* Audio container */}
         <div

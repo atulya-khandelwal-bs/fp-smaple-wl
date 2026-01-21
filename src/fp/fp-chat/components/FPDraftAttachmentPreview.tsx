@@ -16,6 +16,18 @@ export default function FPDraftAttachmentPreview({
   formatDuration,
   currentlyPlayingAudioRef,
 }: FPDraftAttachmentPreviewProps): React.JSX.Element | null {
+  // Format file size helper
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) {
+      return `${bytes} B`;
+    }
+    const kb = bytes / 1024;
+    if (kb >= 1024) {
+      return `${(kb / 1024).toFixed(1)} MB`;
+    }
+    return `${Math.round(kb)} KB`;
+  };
+
   if (!draftAttachment) return null;
 
   return (
@@ -166,7 +178,7 @@ export default function FPDraftAttachmentPreview({
                   ? formatDuration(draftAttachment.duration)
                   : "Recording"}
                 {draftAttachment.size != null
-                  ? ` • ${Math.round(draftAttachment.size / 1024)} KB`
+                  ? ` • ${formatFileSize(draftAttachment.size)}`
                   : ""}
               </div>
             </div>
@@ -187,7 +199,7 @@ export default function FPDraftAttachmentPreview({
             <div style={{ fontSize: 12, color: "#6b7280" }}>
               {(draftAttachment.mimeType || "").toUpperCase()}
               {draftAttachment.size != null
-                ? ` • ${Math.round(draftAttachment.size / 1024)} KB`
+                ? ` • ${formatFileSize(draftAttachment.size)}`
                 : ""}
             </div>
           </>

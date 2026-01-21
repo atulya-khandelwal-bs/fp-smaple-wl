@@ -63,6 +63,7 @@ export default function FPMessageBubble({
           fileMime={msg.fileMime}
           fileSizeBytes={msg.fileSizeBytes}
           fileSize={msg.fileSize}
+          isIncoming={msg.isIncoming}
         />
       );
     }
@@ -106,9 +107,7 @@ export default function FPMessageBubble({
           fileName={documentName}
           fileMime={documentMime}
           fileSizeBytes={documentSize}
-          fileSize={
-            documentSize ? `${Math.round(documentSize / 1024)} KB` : undefined
-          }
+          isIncoming={msg.isIncoming}
           icons_details={payload.icons_details}
           redirection_details={payload.redirection_details}
         />
@@ -312,6 +311,7 @@ export default function FPMessageBubble({
                 fileName={obj.fileName}
                 fileMime={obj.mimeType}
                 fileSizeBytes={obj.size}
+                isIncoming={msg.isIncoming}
               />
             );
           }
@@ -368,59 +368,66 @@ export default function FPMessageBubble({
     <div
       className={`message-wrapper ${msg.isIncoming ? "incoming" : "outgoing"}`}
     >
-      <div className="message-content">
+      <div className="message-container">
         {msg.label && !msg.isIncoming && (
           <div className="message-label">{msg.label}</div>
         )}
-        <div
-          className="message-bubble"
-          style={{
-            position: "relative",
-          }}
-        >
-          {renderMessageContent()}
-          {isLastMessage && !msg.isIncoming && (
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              style={{
-                position: "absolute",
-                right: -8,
-                bottom: -5,
-                pointerEvents: "none",
-              }}
-            >
-              <path
-                d="M0 7.71777C0.5 11.1206 2 18 18 18C16.2251 17.2188 9 12.6373 9 0L0 7.71777Z"
-                fill="#109310"
-              />
-            </svg>
+        <div className="message-content">
+          {!msg.isIncoming && (
+            <div className="message-time">{msg.timestamp}</div>
           )}
-          {isLastMessage && msg.isIncoming && (
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              style={{
-                position: "absolute",
-                left: -8,
-                bottom: -5,
-                pointerEvents: "none",
-              }}
-            >
-              <path
-                d="M18 7.71777C17.5 11.1206 16 18 0 18C1.7749 17.2188 9 12.6373 9 0L18 7.71777Z"
-                fill="#e5e7eb"
-              />
-            </svg>
+          <div
+            className="message-bubble"
+            style={{
+              position: "relative",
+            }}
+          >
+            {renderMessageContent()}
+            {isLastMessage && !msg.isIncoming && (
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                style={{
+                  position: "absolute",
+                  right: -8,
+                  bottom: -5,
+                  pointerEvents: "none",
+                }}
+              >
+                <path
+                  d="M0 7.71777C0.5 11.1206 2 18 18 18C16.2251 17.2188 9 12.6373 9 0L0 7.71777Z"
+                  fill="#109310"
+                />
+              </svg>
+            )}
+            {isLastMessage && msg.isIncoming && (
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                style={{
+                  position: "absolute",
+                  left: -8,
+                  bottom: -5,
+                  pointerEvents: "none",
+                }}
+              >
+                <path
+                  d="M18 7.71777C17.5 11.1206 16 18 0 18C1.7749 17.2188 9 12.6373 9 0L18 7.71777Z"
+                  fill="#e5e7eb"
+                />
+              </svg>
+            )}
+          </div>
+          {msg.isIncoming && (
+            <div className="message-time">{msg.timestamp}</div>
           )}
         </div>
-        <div className="message-time">{msg.timestamp}</div>
       </div>
     </div>
   );

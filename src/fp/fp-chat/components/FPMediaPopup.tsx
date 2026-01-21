@@ -1,16 +1,44 @@
-import React, { useEffect } from "react";
-import { X } from "lucide-react";
+import React, { useEffect, RefObject, KeyboardEvent } from "react";
+import { X, Send, Mic, SendHorizontal } from "lucide-react";
+import { DraftAttachment, Contact } from "../../common/types/chat";
 
 interface FPMediaPopupProps {
   showMediaPopup: boolean;
   onSelect: (type: "photos" | "camera" | "file") => void;
   onClose: () => void;
+  // Input props - same as FPMessageInput
+  message: string;
+  setMessage: (message: string | ((prev: string) => string)) => void;
+  draftAttachment: DraftAttachment | null;
+  getDraftCaption: () => string;
+  selectedContact: Contact | null;
+  isRecording: boolean;
+  peerId: string;
+  inputResetKey: number;
+  onSend: () => void;
+  onKeyPress: (e: KeyboardEvent<HTMLInputElement>) => void;
+  onStartAudioRecording: () => void;
+  inputRef: RefObject<HTMLInputElement>;
+  audioBtnRef: RefObject<HTMLButtonElement>;
 }
 
 export default function FPMediaPopup({
   showMediaPopup,
   onSelect,
   onClose,
+  message,
+  setMessage,
+  draftAttachment,
+  getDraftCaption,
+  selectedContact,
+  isRecording,
+  peerId,
+  inputResetKey,
+  onSend,
+  onKeyPress,
+  onStartAudioRecording,
+  inputRef,
+  audioBtnRef,
 }: FPMediaPopupProps): React.JSX.Element | null {
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -31,6 +59,10 @@ export default function FPMediaPopup({
       onClose();
     }
   };
+
+  // Determine if we should show send icon or mic icon
+  const hasText = typeof message === "string" ? message.trim() : message;
+  const shouldShowSend = hasText || !!draftAttachment;
 
   return (
     <>
@@ -60,37 +92,232 @@ export default function FPMediaPopup({
           borderTopLeftRadius: "20px",
           borderTopRightRadius: "20px",
           zIndex: 9999,
-          padding: "1.5rem",
-          paddingBottom: "2rem",
           boxShadow: "0 -4px 20px rgba(0, 0, 0, 0.15)",
           animation: "slideUp 0.3s ease-out",
           maxHeight: "80vh",
           overflowY: "auto",
+          paddingTop: "1rem",
         }}
       >
-        {/* Close Button */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            marginBottom: "1rem",
-          }}
-        >
-          <button
-            onClick={onClose}
+        {/* Input Bar - Same styling as FPMessageInput but with X button */}
+        <div className="input-container" style={{ background: "transparent" }}>
+          <div
             style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: "0.5rem",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              color: "#6b7280",
+              gap: "12px",
+              padding: "0.5rem",
             }}
           >
-            <X size={24} />
-          </button>
+            {/* Close (X) Button - Red Circular (same style as Plus button) */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <button
+                className="icon-btn close-btn"
+                onClick={onClose}
+                title="Close"
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "50%",
+                  background: "#DC4144",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#FFFFFF",
+                  flexShrink: 0,
+                  transition: "opacity 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = "0.9";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = "1";
+                }}
+              >
+                <X size={20} color="#FFFFFF" strokeWidth={2.5} />
+              </button>
+            </div>
+
+            {/* Input Field - Same styling as FPMessageInput */}
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                flexShrink: 1,
+              }}
+            >
+              <input
+                ref={inputRef}
+                type="text"
+                key={`${peerId}-${inputResetKey}`}
+                placeholder={
+                  draftAttachment && draftAttachment.type === "audio"
+                    ? "Add a caption (optional)"
+                    : draftAttachment
+                    ? "Add a caption (optional)"
+                    : "Write a message..."
+                }
+                value={
+                  draftAttachment && draftAttachment.type !== "audio"
+                    ? getDraftCaption()
+                    : draftAttachment
+                    ? ""
+                    : typeof message === "string"
+                    ? message
+                    : ""
+                }
+                onChange={(e) => {
+                  const text = e.target.value;
+                  if (draftAttachment) {
+                    try {
+                      const obj = JSON.parse(message) as { caption?: string };
+                      obj.caption = text;
+                      setMessage(JSON.stringify(obj));
+                    } catch {
+                      setMessage(text);
+                    }
+                  } else {
+                    setMessage(text);
+                  }
+                }}
+                onInput={(e) => {
+                  const text = (e.target as HTMLInputElement).value;
+                  if (!draftAttachment && text !== message) {
+                    setMessage(text);
+                  }
+                }}
+                onKeyPress={onKeyPress}
+                className="message-input"
+                disabled={!selectedContact}
+                style={{
+                  width: "100%",
+                  border: "none",
+                  outline: "none",
+                  padding: "0.75rem 1rem",
+                  fontSize: "0.875rem",
+                  background: "#F3F4F6",
+                  borderRadius: "24px",
+                  color: "#111827",
+                }}
+              />
+            </div>
+
+            {/* Send/Mic Icon Button - Same styling as FPMessageInput */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              {shouldShowSend ? (
+                <button
+                  className="icon-btn send-icon-btn"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSend();
+                    onClose();
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  disabled={!selectedContact || (!draftAttachment && !hasText)}
+                  title="Send message"
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "50%",
+                    background: "#DC4144",
+                    border: "none",
+                    cursor:
+                      selectedContact && (draftAttachment || hasText)
+                        ? "pointer"
+                        : "not-allowed",
+                    padding: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    transition: "opacity 0.2s",
+                    color: "#FFFFFF",
+                    opacity:
+                      selectedContact && (draftAttachment || hasText) ? 1 : 0.5,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedContact && (draftAttachment || hasText)) {
+                      e.currentTarget.style.opacity = "0.9";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedContact && (draftAttachment || hasText)) {
+                      e.currentTarget.style.opacity = "1";
+                    }
+                  }}
+                >
+                  {/* <Send size={20} color="#FFFFFF" strokeWidth={2.5} /> */}
+                  <SendHorizontal size={20} />
+                </button>
+              ) : (
+                <button
+                  ref={audioBtnRef}
+                  className="icon-btn mic-icon-btn"
+                  disabled={!selectedContact || isRecording}
+                  onClick={() => {
+                    if (!isRecording) {
+                      onClose();
+                      onStartAudioRecording();
+                    }
+                  }}
+                  title="Record audio"
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "50%",
+                    background: "#0A1F34",
+                    border: "none",
+                    cursor:
+                      selectedContact && !isRecording
+                        ? "pointer"
+                        : "not-allowed",
+                    padding: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#FFFFFF",
+                    flexShrink: 0,
+                    transition: "opacity 0.2s",
+                    opacity: selectedContact && !isRecording ? 1 : 0.5,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedContact && !isRecording) {
+                      e.currentTarget.style.opacity = "0.9";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedContact && !isRecording) {
+                      e.currentTarget.style.opacity = "1";
+                    }
+                  }}
+                >
+                  <Mic size={20} color="#FFFFFF" strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Media Options */}
@@ -100,7 +327,8 @@ export default function FPMediaPopup({
             justifyContent: "space-around",
             alignItems: "center",
             gap: "2rem",
-            padding: "1rem 0",
+            padding: "1.5rem 1rem",
+            paddingBottom: "2rem",
           }}
         >
           <button
@@ -116,12 +344,13 @@ export default function FPMediaPopup({
               flexDirection: "column",
               alignItems: "center",
               gap: "0.75rem",
-              padding: "1rem",
+              padding: "0.5rem",
               borderRadius: "12px",
               transition: "background-color 0.2s",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#f3f4f6";
+              e.currentTarget.style.backgroundColor =
+                "rgba(255, 255, 255, 0.5)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "transparent";
@@ -131,17 +360,17 @@ export default function FPMediaPopup({
               style={{
                 width: "64px",
                 height: "64px",
-                borderRadius: "16px",
-                background: "#EFF6FF",
+                borderRadius: "50%",
+                background: "#FEF3C7",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "#2563eb",
+                color: "#F59E0B",
               }}
             >
               <svg
-                width="32"
-                height="32"
+                width="28"
+                height="28"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -154,7 +383,13 @@ export default function FPMediaPopup({
                 <polyline points="21 15 16 10 5 21" />
               </svg>
             </div>
-            <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "#111827" }}>
+            <span
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: 500,
+                color: "#111827",
+              }}
+            >
               Photos
             </span>
           </button>
@@ -172,12 +407,13 @@ export default function FPMediaPopup({
               flexDirection: "column",
               alignItems: "center",
               gap: "0.75rem",
-              padding: "1rem",
+              padding: "0.5rem",
               borderRadius: "12px",
               transition: "background-color 0.2s",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#f3f4f6";
+              e.currentTarget.style.backgroundColor =
+                "rgba(255, 255, 255, 0.5)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "transparent";
@@ -187,17 +423,17 @@ export default function FPMediaPopup({
               style={{
                 width: "64px",
                 height: "64px",
-                borderRadius: "16px",
-                background: "#F0FDF4",
+                borderRadius: "50%",
+                background: "#DBEAFE",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "#16a34a",
+                color: "#3B82F6",
               }}
             >
               <svg
-                width="32"
-                height="32"
+                width="28"
+                height="28"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -209,7 +445,13 @@ export default function FPMediaPopup({
                 <circle cx="12" cy="13" r="4" />
               </svg>
             </div>
-            <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "#111827" }}>
+            <span
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: 500,
+                color: "#111827",
+              }}
+            >
               Camera
             </span>
           </button>
@@ -227,12 +469,13 @@ export default function FPMediaPopup({
               flexDirection: "column",
               alignItems: "center",
               gap: "0.75rem",
-              padding: "1rem",
+              padding: "0.5rem",
               borderRadius: "12px",
               transition: "background-color 0.2s",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#f3f4f6";
+              e.currentTarget.style.backgroundColor =
+                "rgba(255, 255, 255, 0.5)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "transparent";
@@ -242,17 +485,17 @@ export default function FPMediaPopup({
               style={{
                 width: "64px",
                 height: "64px",
-                borderRadius: "16px",
-                background: "#FEF3C7",
+                borderRadius: "50%",
+                background: "#D1FAE5",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "#d97706",
+                color: "#10B981",
               }}
             >
               <svg
-                width="32"
-                height="32"
+                width="28"
+                height="28"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -267,7 +510,13 @@ export default function FPMediaPopup({
                 <polyline points="10 9 9 9 8 9" />
               </svg>
             </div>
-            <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "#111827" }}>
+            <span
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: 500,
+                color: "#111827",
+              }}
+            >
               File
             </span>
           </button>

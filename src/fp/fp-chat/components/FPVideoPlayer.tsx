@@ -93,7 +93,7 @@ export default function FPVideoPlayer({
         }}
       >
         {/* Close button */}
-        <button
+        <div
           onClick={onClose}
           style={{
             position: "absolute",
@@ -112,15 +112,9 @@ export default function FPVideoPlayer({
             zIndex: 10,
             transition: "background 0.2s",
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.2)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.1)";
-          }}
         >
           <X size={20} />
-        </button>
+        </div>
 
         {/* Video container */}
         <div

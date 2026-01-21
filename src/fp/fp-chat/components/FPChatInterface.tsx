@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import axios from "axios";
 import config from "../../common/config.ts";
-import {
-  generatePresignUrl,
-  uploadFileToS3,
-  sendCustomMessage,
-  fetchMessagesFromApi,
-} from "../services/chatApi.ts";
 import FPChatHeader from "./FPChatHeader";
 import FPChatTab from "./FPChatTab";
 import type { Connection } from "agora-chat";
@@ -128,7 +123,7 @@ export default function FPChatInterface({
   chatClient,
   onBackToConversations,
   onInitiateCall,
-  onScheduleClick: _onScheduleClick,
+  onScheduleClick,
   onSchedule,
   onUpdateLastMessageFromHistory,
   onMessagesLoadedFromHistory,
@@ -159,7 +154,10 @@ export default function FPChatInterface({
   const photoInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isRecordingStopped, setIsRecordingStopped] = useState<boolean>(false);
   const [recordingDuration, setRecordingDuration] = useState<number>(0);
+  const [stoppedRecordingDuration, setStoppedRecordingDuration] =
+    useState<number>(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -167,6 +165,7 @@ export default function FPChatInterface({
   const recordingStartTimeRef = useRef<number | null>(null); // Track when recording started
   const recordingDurationRef = useRef<number>(0); // Track duration in a ref for accurate reading
   const shouldSendRecordingRef = useRef<boolean>(true);
+  const stoppedAudioBlobRef = useRef<Blob | null>(null);
   const [inputResetKey, setInputResetKey] = useState<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const prevMessageRef = useRef<string>("");
@@ -1618,6 +1617,7 @@ export default function FPChatInterface({
           // Update the existing message with new content and mark as edited
           // Ensure we're using the new content from the edited message
           const newContent = editedMsg.content || existingMsg.content;
+          const contentChanged = newContent !== existingMsg.content;
 
           const updatedMessage = {
             ...existingMsg,
@@ -2129,18 +2129,18 @@ export default function FPChatInterface({
         closeImageViewer();
       }
       // Also cancel recording on Escape
-      if (e.key === "Escape" && isRecording) {
+      if (e.key === "Escape" && (isRecording || isRecordingStopped)) {
         cancelAudioRecording();
       }
     };
 
-    if (imageViewerUrl || isRecording) {
+    if (imageViewerUrl || isRecording || isRecordingStopped) {
       document.addEventListener("keydown", handleEscape);
       return () => {
         document.removeEventListener("keydown", handleEscape);
       };
     }
-  }, [imageViewerUrl, isRecording]);
+  }, [imageViewerUrl, isRecording, isRecordingStopped]);
 
   // Cleanup effect for recording
   useEffect(() => {
@@ -2221,17 +2221,20 @@ export default function FPChatInterface({
       }/${Date.now()}-${safeFileName}`;
 
       // 1️⃣ Request pre-signed URL
-      const { url: uploadUrl, fileUrl } = await generatePresignUrl(
+      const { data } = await axios.post(config.api.generatePresignUrl, {
         objectKey,
-        config.upload.expiresInMinutes
-      );
+        expiresInMinutes: config.upload.expiresInMinutes,
+      });
+
+      const { url: uploadUrl, fileUrl } = data;
 
       // 2️⃣ Upload to S3
-      await uploadFileToS3({
-        file,
-        uploadUrl,
-        contentType: file.type,
-        onUploadProgress: (percent) => {
+      await axios.put(uploadUrl, file, {
+        headers: { "Content-Type": file.type },
+        onUploadProgress: (event) => {
+          const percent = event.total
+            ? Math.round((event.loaded * 100) / event.total)
+            : 0;
           setUploadProgress(percent);
         },
       });
@@ -2455,31 +2458,42 @@ export default function FPChatInterface({
           ? Math.floor((Date.now() - recordingStartTimeRef.current) / 1000)
           : recordingDurationRef.current || recordingDuration;
 
-        // Only send if shouldSendRecordingRef is true (not cancelled)
-        if (
-          shouldSendRecordingRef.current &&
-          audioChunksRef.current.length > 0
-        ) {
-          const audioBlob = new Blob(audioChunksRef.current, {
-            type: mediaRecorder.mimeType || "audio/webm",
-          });
-          // Convert to WAV format
-          const wavBlob = await convertToWAV(audioBlob);
-          await handleSendAudio(wavBlob, actualDuration);
-        }
-
-        // Clear recording state
-        setIsRecording(false);
-        setRecordingDuration(0);
-        recordingStartTimeRef.current = null;
-        recordingDurationRef.current = 0;
+        // Stop the timer
         if (recordingTimerRef.current) {
           clearInterval(recordingTimerRef.current);
           recordingTimerRef.current = null;
         }
 
-        // Reset flag for next recording
-        shouldSendRecordingRef.current = true;
+        // If cancelled, just clear everything
+        if (!shouldSendRecordingRef.current) {
+          setIsRecording(false);
+          setIsRecordingStopped(false);
+          setRecordingDuration(0);
+          setStoppedRecordingDuration(0);
+          recordingStartTimeRef.current = null;
+          recordingDurationRef.current = 0;
+          stoppedAudioBlobRef.current = null;
+          audioChunksRef.current = [];
+          shouldSendRecordingRef.current = true;
+          return;
+        }
+
+        // Store the audio blob for later sending
+        if (audioChunksRef.current.length > 0) {
+          const audioBlob = new Blob(audioChunksRef.current, {
+            type: mediaRecorder.mimeType || "audio/webm",
+          });
+          // Convert to WAV format
+          const wavBlob = await convertToWAV(audioBlob);
+          stoppedAudioBlobRef.current = wavBlob;
+          setStoppedRecordingDuration(actualDuration);
+          setIsRecordingStopped(true);
+        }
+
+        // Clear recording state but keep stopped state
+        setIsRecording(false);
+        recordingStartTimeRef.current = null;
+        recordingDurationRef.current = 0;
       };
 
       shouldSendRecordingRef.current = true;
@@ -2523,12 +2537,34 @@ export default function FPChatInterface({
 
   const cancelAudioRecording = (): void => {
     if (mediaRecorderRef.current && isRecording) {
-      // Set flag to prevent sending
+      // Set flag to prevent storing the blob
       shouldSendRecordingRef.current = false;
       // Clear chunks without sending
       audioChunksRef.current = [];
-      // Stop the recorder (this will trigger onstop but won't send due to flag)
+      // Stop the recorder (this will trigger onstop but won't store due to flag)
       mediaRecorderRef.current.stop();
+    } else if (isRecordingStopped) {
+      // Cancel from stopped state - clear everything
+      setIsRecordingStopped(false);
+      setRecordingDuration(0);
+      setStoppedRecordingDuration(0);
+      stoppedAudioBlobRef.current = null;
+      audioChunksRef.current = [];
+    }
+  };
+
+  const sendStoppedRecording = async (): Promise<void> => {
+    if (stoppedAudioBlobRef.current && isRecordingStopped) {
+      await handleSendAudio(
+        stoppedAudioBlobRef.current,
+        stoppedRecordingDuration
+      );
+      // Clear stopped state after sending
+      setIsRecordingStopped(false);
+      setRecordingDuration(0);
+      setStoppedRecordingDuration(0);
+      stoppedAudioBlobRef.current = null;
+      audioChunksRef.current = [];
     }
   };
 
@@ -2569,17 +2605,20 @@ export default function FPChatInterface({
       }/${Date.now()}-${safeFileName}`;
 
       // 1️⃣ Request pre-signed URL
-      const { url: uploadUrl, fileUrl } = await generatePresignUrl(
+      const { data } = await axios.post(config.api.generatePresignUrl, {
         objectKey,
-        config.upload.expiresInMinutes
-      );
+        expiresInMinutes: config.upload.expiresInMinutes,
+      });
+
+      const { url: uploadUrl, fileUrl } = data;
 
       // 2️⃣ Upload to S3
-      await uploadFileToS3({
-        file: audioFile,
-        uploadUrl,
-        contentType: audioBlob.type,
-        onUploadProgress: (percent) => {
+      await axios.put(uploadUrl, audioFile, {
+        headers: { "Content-Type": audioBlob.type },
+        onUploadProgress: (event) => {
+          const percent = event.total
+            ? Math.round((event.loaded * 100) / event.total)
+            : 0;
           setUploadProgress(percent);
         },
       });
@@ -2674,6 +2713,11 @@ export default function FPChatInterface({
         ? peerId
         : `user_${peerId}`;
 
+      // Prepare API fetch
+      const apiUrl = new URL(config.api.fetchMessages);
+      apiUrl.searchParams.append("conversationId", conversationId);
+      apiUrl.searchParams.append("limit", String(config.chat.pageSize || 20));
+
       // Cast chatClient to Connection type to access getHistoryMessages
       const client = chatClient as Connection & {
         getHistoryMessages?: (options: {
@@ -2699,15 +2743,12 @@ export default function FPChatInterface({
             })
           : Promise.resolve({ messages: [], cursor: undefined }),
         // Fetch from API
-        fetchMessagesFromApi({
-          conversationId: conversationId,
-          userId,
-          page: 1,
-          pageSize: config.chat.pageSize || 20,
-        }).then((data) => ({
-          messages: data.messages || [],
-          cursor: data.cursor,
-        })),
+        fetch(apiUrl.toString()).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to fetch messages: ${response.status}`);
+          }
+          return response.json();
+        }),
       ]);
 
       // Process Agora messages
@@ -2726,7 +2767,7 @@ export default function FPChatInterface({
       if (apiResult.status === "fulfilled") {
         const apiRes = apiResult.value;
         apiMessages = apiRes?.messages || [];
-        apiCursor = apiRes?.cursor;
+        apiCursor = apiRes?.nextCursor;
       } else {
       }
 
@@ -3220,6 +3261,14 @@ export default function FPChatInterface({
         ? peerId
         : `user_${peerId}`;
 
+      // Prepare API fetch
+      const apiUrl = new URL(config.api.fetchMessages);
+      apiUrl.searchParams.append("conversationId", conversationId);
+      apiUrl.searchParams.append("limit", "20");
+      if (cursor) {
+        apiUrl.searchParams.append("cursor", String(cursor));
+      }
+
       // Cast chatClient to Connection type to access getHistoryMessages
       const client = chatClient as Connection & {
         getHistoryMessages?: (options: {
@@ -3247,16 +3296,12 @@ export default function FPChatInterface({
             })
           : Promise.resolve({ messages: [], cursor: undefined }),
         // Fetch from API
-        fetchMessagesFromApi({
-          conversationId: conversationId,
-          userId,
-          page: 1,
-          pageSize: 20,
-          cursor: cursor ? String(cursor) : undefined,
-        }).then((data) => ({
-          messages: data.messages || [],
-          cursor: data.cursor,
-        })),
+        fetch(apiUrl.toString()).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to fetch messages: ${response.status}`);
+          }
+          return response.json();
+        }),
       ]);
 
       // Process Agora messages
@@ -3275,7 +3320,7 @@ export default function FPChatInterface({
       if (apiResult.status === "fulfilled") {
         const apiRes = apiResult.value;
         apiMessages = apiRes?.messages || [];
-        apiCursor = apiRes?.cursor;
+        apiCursor = apiRes?.nextCursor;
       } else {
       }
 
@@ -3690,19 +3735,17 @@ export default function FPChatInterface({
       // Send custom message for scheduled call canceled
       if (peerId && scheduledCallFromApi.call_date_time) {
         try {
-          await sendCustomMessage({
-            conversation_id: peerId || "",
-            from_user: userId,
-            to_user: peerId || "",
-            message_type: "custom",
-            body: {
-              messageType: "scheduled_call_canceled",
-              payload: {
-                type: "scheduled_call_canceled",
-                time: scheduledCallFromApi.call_date_time, // Original scheduled time (epoch time in seconds)
-              },
+          const body = {
+            from: userId,
+            to: peerId,
+            type: "scheduled_call_canceled",
+            data: {
+              type: "scheduled_call_canceled",
+              time: scheduledCallFromApi.call_date_time, // Original scheduled time (epoch time in seconds)
             },
-          });
+          };
+
+          await axios.post(config.api.customMessage, body);
         } catch (error) {
           console.error(
             "Error sending scheduled call canceled custom message:",
@@ -3898,14 +3941,33 @@ export default function FPChatInterface({
         showMediaPopup={showMediaPopup}
         onSelect={handleMediaSelect}
         onClose={() => setShowMediaPopup(false)}
+        message={message}
+        setMessage={
+          setMessage as (msg: string | ((prev: string) => string)) => void
+        }
+        draftAttachment={draftAttachment}
+        getDraftCaption={getDraftCaption}
+        selectedContact={selectedContact}
+        isRecording={isRecording}
+        peerId={peerId || ""}
+        inputResetKey={inputResetKey}
+        onSend={handleSendMessage}
+        onKeyPress={handleKeyPress}
+        onStartAudioRecording={startAudioRecording}
+        inputRef={inputRef as React.RefObject<HTMLInputElement>}
+        audioBtnRef={audioBtnRef as React.RefObject<HTMLButtonElement>}
       />
 
       {/* Audio Recording Overlay */}
       <FPAudioRecordingOverlay
         isRecording={isRecording}
-        recordingDuration={recordingDuration}
+        isStopped={isRecordingStopped}
+        recordingDuration={
+          isRecordingStopped ? stoppedRecordingDuration : recordingDuration
+        }
         onCancel={cancelAudioRecording}
         onStop={stopAudioRecording}
+        onSend={sendStoppedRecording}
         formatDuration={formatDuration}
       />
 

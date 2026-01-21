@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, Phone } from "lucide-react";
 import { Contact } from "../../common/types/chat";
 import config from "../../common/config.ts";
@@ -46,6 +46,7 @@ export default function FPScheduleCallModal({
     useState<DietitianApiResponse | null>(null);
   const [_loading, setLoading] = useState<boolean>(false); // Loading state kept for potential future UI use
   const [scheduling, setScheduling] = useState<boolean>(false);
+  const scrollableContentRef = useRef<HTMLDivElement>(null);
 
   const loadDietitianDetails = async (): Promise<void> => {
     if (!selectedContact) return;
@@ -223,12 +224,38 @@ export default function FPScheduleCallModal({
   // Reset selections when modal opens
   useEffect(() => {
     if (isOpen) {
-      setSelectedDate(new Date());
+      setSelectedDate(null);
       setSelectedTime("");
       setSelectedTopics([]);
       setCallType("Video");
     }
   }, [isOpen]);
+
+  // Auto-select first available date when data loads
+  useEffect(() => {
+    if (isOpen && !selectedDate && dietitianData) {
+      const availableDates = getDates();
+      if (availableDates.length > 0) {
+        setSelectedDate(availableDates[0].date);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, dietitianData, selectedDate]);
+
+  // Auto-scroll to bottom when time is selected to show topic selection
+  useEffect(() => {
+    if (selectedTime && scrollableContentRef.current) {
+      // Use setTimeout to ensure the DOM has updated with the topic selection section
+      setTimeout(() => {
+        if (scrollableContentRef.current) {
+          scrollableContentRef.current.scrollTo({
+            top: scrollableContentRef.current.scrollHeight,
+            behavior: "smooth",
+          });
+        }
+      }, 100);
+    }
+  }, [selectedTime]);
 
   if (!isOpen || !selectedContact) return null;
 
@@ -650,6 +677,7 @@ export default function FPScheduleCallModal({
 
         {/* Scrollable Content */}
         <div
+          ref={scrollableContentRef}
           style={{
             flex: 1,
             overflowY: "auto",
@@ -693,6 +721,16 @@ export default function FPScheduleCallModal({
                     height: "100%",
                     borderRadius: "50%",
                     objectFit: "cover",
+                    display: "block",
+                  }}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    if (target.src !== config.defaults.avatar) {
+                      target.src = config.defaults.avatar;
+                    } else {
+                      // If default avatar also fails, hide the image
+                      target.style.display = "none";
+                    }
                   }}
                 />
               </div>
@@ -750,7 +788,7 @@ export default function FPScheduleCallModal({
           {/* Date Selection */}
           <div
             style={{
-              marginBottom: "2rem",
+              marginBottom: "1rem",
             }}
           >
             <div
@@ -865,7 +903,7 @@ export default function FPScheduleCallModal({
           {/* Time Selection */}
           <div
             style={{
-              marginBottom: hasDateAndTime ? "2rem" : "0",
+              marginBottom: hasDateAndTime ? "1rem" : "0",
             }}
           >
             <div
@@ -920,9 +958,11 @@ export default function FPScheduleCallModal({
           {/* Topic Selection - Only show when date and time are selected */}
           {hasDateAndTime && (
             <div
-              style={{
-                marginBottom: "2rem",
-              }}
+              style={
+                {
+                  // marginBottom: "2rem",
+                }
+              }
             >
               <div
                 style={{
@@ -1142,7 +1182,7 @@ export default function FPScheduleCallModal({
               style={{
                 width: "131px",
                 height: "52px",
-                padding: "0.875rem 2rem",
+                alignItems: "center",
                 border: "none",
                 borderRadius: "100px",
                 backgroundColor:
@@ -1173,7 +1213,7 @@ export default function FPScheduleCallModal({
                 }
               }}
             >
-              {scheduling ? "Scheduling..." : "Schedule"}
+              {scheduling ? "Scheduling..." : "Schedule Call"}
             </button>
           </div>
         </div>

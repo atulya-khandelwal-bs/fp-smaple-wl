@@ -1,126 +1,291 @@
-import React from "react";
+import { Send, SendHorizontal, SquareStop, Trash2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
 
 interface FPAudioRecordingOverlayProps {
   isRecording: boolean;
+  isStopped: boolean;
   recordingDuration: number;
   onCancel: () => void;
   onStop: () => void;
+  onSend: () => void;
   formatDuration: (seconds: number) => string;
 }
 
 export default function FPAudioRecordingOverlay({
   isRecording,
+  isStopped,
   recordingDuration,
   onCancel,
   onStop,
+  onSend,
   formatDuration,
 }: FPAudioRecordingOverlayProps): React.JSX.Element | null {
-  if (!isRecording) return null;
+  const [waveformData, setWaveformData] = useState<number[]>([]);
+  const [finalWaveform, setFinalWaveform] = useState<number[]>([]);
+
+  // Simulate waveform data (in real app, this would come from audio analysis)
+  useEffect(() => {
+    if (isRecording) {
+      const interval = setInterval(() => {
+        // Generate random waveform bars (heights between 4-24px)
+        const newBars = Array.from(
+          { length: 25 },
+          () => Math.random() * 20 + 4
+        );
+        setWaveformData(newBars);
+        setFinalWaveform(newBars); // Keep updating final waveform while recording
+      }, 100);
+
+      return () => clearInterval(interval);
+    }
+  }, [isRecording]);
+
+  // Don't show if neither recording nor stopped
+  if (!isRecording && !isStopped) return null;
 
   return (
     <div
       className="audio-recording-overlay"
       style={{
         position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.65)",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        background: "#FCE7F3",
+        padding: "12px 16px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 50,
+        zIndex: 100,
       }}
     >
       <div
         style={{
-          background: "#111827",
-          borderRadius: 16,
-          padding: 24,
-          width: "min(90vw, 320px)",
           display: "flex",
-          flexDirection: "column",
           alignItems: "center",
-          gap: 16,
+          gap: "12px",
+          width: "100%",
+          maxWidth: "600px",
         }}
       >
+        {/* Timestamp */}
         <div
           style={{
-            width: 80,
-            height: 80,
-            borderRadius: "50%",
-            background: "#dc2626",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            animation: "pulse 1.5s ease-in-out infinite",
+            fontSize: "14px",
+            fontWeight: 500,
+            color: "#374151",
+            minWidth: "45px",
+            flexShrink: 0,
           }}
         >
-          <svg
-            width="32"
-            height="32"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="white"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-            <line x1="12" y1="19" x2="12" y2="23" />
-            <line x1="8" y1="23" x2="16" y2="23" />
-          </svg>
-        </div>
-        <div style={{ color: "white", fontSize: 24, fontWeight: 700 }}>
           {formatDuration(recordingDuration)}
         </div>
-        <div style={{ color: "#9ca3af", fontSize: 14, textAlign: "center" }}>
-          Recording audio message...
+
+        {/* Audio Waveform Bar */}
+        <div
+          style={{
+            flex: 1,
+            height: "48px",
+            background: "#FFFFFF",
+            border: "1px solid #E5E7EB",
+            borderRadius: "24px",
+            padding: "8px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: "3px",
+            overflow: "hidden",
+          }}
+        >
+          {isStopped ? (
+            /* Static waveform when stopped */
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "2px",
+                height: "100%",
+                flex: 1,
+              }}
+            >
+              {finalWaveform.length > 0
+                ? finalWaveform.map((height, i) => (
+                    <div
+                      key={`bar-${i}`}
+                      style={{
+                        width: "3px",
+                        height: `${height}px`,
+                        background: "#DC4144",
+                        borderRadius: "2px",
+                      }}
+                    />
+                  ))
+                : Array.from({ length: 25 }).map((_, i) => (
+                    <div
+                      key={`bar-${i}`}
+                      style={{
+                        width: "3px",
+                        height: `${Math.random() * 20 + 4}px`,
+                        background: "#DC4144",
+                        borderRadius: "2px",
+                      }}
+                    />
+                  ))}
+            </div>
+          ) : (
+            <>
+              {/* Dotted line for silence (first part) */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "4px",
+                  alignItems: "center",
+                  height: "100%",
+                  marginRight: "8px",
+                }}
+              >
+                {Array.from({ length: 10 }).map((_, i) => (
+                  <div
+                    key={`dot-${i}`}
+                    style={{
+                      width: "3px",
+                      height: "3px",
+                      borderRadius: "50%",
+                      background: "#DC4144",
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Waveform bars */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "2px",
+                  height: "100%",
+                  flex: 1,
+                }}
+              >
+                {waveformData.length > 0
+                  ? waveformData.map((height, i) => (
+                      <div
+                        key={`bar-${i}`}
+                        style={{
+                          width: "3px",
+                          height: `${height}px`,
+                          background: "#DC4144",
+                          borderRadius: "2px",
+                          transition: "height 0.1s ease-out",
+                        }}
+                      />
+                    ))
+                  : Array.from({ length: 20 }).map((_, i) => (
+                      <div
+                        key={`bar-${i}`}
+                        style={{
+                          width: "3px",
+                          height: "4px",
+                          background: "#DC4144",
+                          borderRadius: "2px",
+                        }}
+                      />
+                    ))}
+              </div>
+            </>
+          )}
         </div>
+
+        {/* Action Buttons */}
         <div
           style={{
             display: "flex",
-            gap: 12,
-            width: "100%",
-            marginTop: 8,
+            gap: "8px",
+            flexShrink: 0,
           }}
         >
+          {/* Delete/Trash Button */}
           <button
             onClick={onCancel}
             style={{
-              flex: 1,
-              padding: "12px 16px",
-              borderRadius: 8,
+              width: "40px",
+              height: "40px",
+              borderRadius: "50%",
+              background: "#DC4144",
               border: "none",
-              background: "#6b7280",
-              color: "white",
               cursor: "pointer",
-              fontWeight: 600,
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onStop}
-            style={{
-              flex: 1,
-              padding: "12px 16px",
-              borderRadius: 8,
-              border: "none",
-              background: "#10b981",
-              color: "white",
-              cursor: "pointer",
-              fontWeight: 700,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              gap: 8,
+              transition: "opacity 0.2s",
+              padding: 0,
+              color: "#FFFFFF",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = "0.8";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = "1";
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M5 3h14v18H5V3z" />
-            </svg>
-            Send
+            <Trash2 size={20} color="#FFFFFF" />
           </button>
+
+          {/* Stop or Send Button */}
+          {isStopped ? (
+            /* Send Button - shown after stopping */
+            <button
+              onClick={onSend}
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                background: "#DC4144",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "opacity 0.2s",
+                padding: 0,
+                color: "#FFFFFF",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.opacity = "0.9";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = "1";
+              }}
+            >
+              <SendHorizontal size={20} />
+            </button>
+          ) : (
+            /* Stop Button - shown while recording */
+            <button
+              onClick={onStop}
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                background: "#DC4144",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "opacity 0.2s",
+                padding: 0,
+                color: "#FFFFFF",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.opacity = "0.9";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = "1";
+              }}
+            >
+              <SquareStop size={20} color="#FFFFFF" />
+            </button>
+          )}
         </div>
       </div>
     </div>
