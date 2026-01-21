@@ -213,7 +213,7 @@ export default function FPChatTab({
           className="floating-date-tag"
           style={{
             position: "sticky",
-            top: "-0.9rem",
+            top: "1rem",
             zIndex: 100,
             display: "flex",
             justifyContent: "center",
@@ -233,8 +233,6 @@ export default function FPChatTab({
               borderRadius: "100px",
               fontSize: "0.75rem",
               fontWeight: 600,
-              boxShadow:
-                "0 0 8px rgba(16, 147, 16, 0.3), 0 2px 4px rgba(16, 147, 16, 0.2)",
               backdropFilter: "blur(8px)",
             }}
           >

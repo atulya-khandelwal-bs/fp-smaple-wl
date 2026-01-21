@@ -286,18 +286,25 @@ The module includes a recording player page that opens call recordings in a new 
 ```tsx
 import React from "react";
 import FPChatApp from "./fp/fp-chat/FPChatApp.tsx";
-import FPRecordingPlayerPage from "./fp/fp-chat/components/FPRecordingPlayerPage.tsx";
 
-function App() {
-  // Check if this is a recording player page (has URL parameter)
-  const urlParams = new URLSearchParams(window.location.search);
-  const isRecordingPlayer = urlParams.has("url");
+// Sample patient id
+const userId = 119933;
 
-  if (isRecordingPlayer) {
-    return <FPRecordingPlayerPage />;
-  }
+function App(): React.JSX.Element {
+  // Use URL params or defaults
+  const finalUserId = String(userId);
+  const finalConversationId = "333"; // Default conversation ID
 
-  return <FPChatApp userId="your-user-id" />;
+  // Only pass required props - dietitian details (name, photo, profile) are fetched automatically
+  return (
+    <FPChatApp
+      userId={finalUserId}
+      conversationId={finalConversationId}
+      onLogout={() => {
+        console.log("User logged out from chat");
+      }}
+    />
+  );
 }
 
 export default App;

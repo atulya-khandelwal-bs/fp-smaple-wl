@@ -12,6 +12,17 @@ export default function FPImageMessageView({
   openImageViewer,
 }: FPImageMessageViewProps): React.JSX.Element {
   const [imageError, setImageError] = React.useState(false);
+  const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
+  const isTouchDeviceRef = React.useRef(false);
+
+  const handleImageClick = React.useCallback(() => {
+    if (imageUrl) {
+      openImageViewer(imageUrl, fileName);
+    }
+  }, [imageUrl, fileName, openImageViewer]);
+
+  // Threshold for determining if it's a tap vs scroll (in pixels)
+  const TAP_THRESHOLD = 10;
 
   return (
     <div
@@ -25,6 +36,40 @@ export default function FPImageMessageView({
         backgroundColor: "#f3f4f6",
         minHeight: "150px",
         position: "relative",
+        cursor: "zoom-in",
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        // Only handle click on non-touch devices (desktop)
+        if (!isTouchDeviceRef.current) {
+          handleImageClick();
+        }
+        // Reset touch device flag after click
+        isTouchDeviceRef.current = false;
+      }}
+      onTouchStart={(e) => {
+        isTouchDeviceRef.current = true;
+        // Record the starting position
+        const touch = e.touches[0];
+        touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+      }}
+      onTouchEnd={(e) => {
+        e.stopPropagation();
+        
+        // Check if touch moved significantly (scrolling) or stayed in place (tap)
+        if (touchStartRef.current && e.changedTouches[0]) {
+          const touch = e.changedTouches[0];
+          const deltaX = Math.abs(touch.clientX - touchStartRef.current.x);
+          const deltaY = Math.abs(touch.clientY - touchStartRef.current.y);
+          
+          // Only open if it was a tap (minimal movement)
+          if (deltaX < TAP_THRESHOLD && deltaY < TAP_THRESHOLD) {
+            e.preventDefault();
+            handleImageClick();
+          }
+        }
+        
+        touchStartRef.current = null;
       }}
     >
       {!imageError ? (
@@ -37,24 +82,8 @@ export default function FPImageMessageView({
             maxHeight: "300px",
             borderRadius: "0.5rem",
             display: "block",
-            cursor: "zoom-in",
-            pointerEvents: "auto",
+            pointerEvents: "none",
             userSelect: "none",
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            openImageViewer(imageUrl, fileName);
-          }}
-          onTouchStart={(e) => {
-            e.stopPropagation();
-          }}
-          onTouchEnd={(e) => {
-            e.stopPropagation();
-            // Use setTimeout to avoid passive event listener issue
-            setTimeout(() => {
-              openImageViewer(imageUrl, fileName);
-            }, 0);
           }}
           onError={() => {
             setImageError(true);

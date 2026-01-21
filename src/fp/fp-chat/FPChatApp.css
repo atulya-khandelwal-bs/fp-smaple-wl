@@ -4,6 +4,16 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+  height: 100dvh; /* Dynamic viewport height - adjusts for mobile keyboard */
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+  overscroll-behavior: none; /* Prevent pull-to-refresh and overscroll */
+}
+
 :root {
   --bg: #ffffff;
   --panel: #ffffff;
@@ -23,15 +33,20 @@
   flex-direction: column;
   padding: 0;
   height: 100vh;
+  height: 100dvh;
   width: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: "Figtree", ui-sans-serif, system-ui, -apple-system, Segoe UI,
     Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
   overflow: hidden;
-  touch-action: pan-y; /* Enable vertical scrolling on mobile */
-  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
-  position: relative; /* Ensure proper positioning context */
+  touch-action: none; /* Prevent scrolling on container */
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overscroll-behavior: none;
 }
 
 .app-container > .container {
@@ -275,7 +290,10 @@ input {
   display: flex;
   flex-direction: column;
   height: 100%;
+  max-height: 100vh;
   background: var(--bg);
+  overflow: hidden;
+  position: relative;
 }
 
 .chat-header {
@@ -350,8 +368,11 @@ input {
   overflow-x: hidden;
   padding: 1rem;
   background: var(--bg);
-  height: 0;
-  scrollbar-width: none; /* This allows flex to properly constrain height */
+  min-height: 0; /* Important: allows flex item to shrink below content size */
+  scrollbar-width: none;
+  touch-action: pan-y; /* Only allow vertical scrolling in chat area */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; /* Prevent scroll chaining to parent */
 }
 
 .tab-content {
@@ -405,7 +426,7 @@ input {
 .messages-container {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
 .message-wrapper {
@@ -523,6 +544,7 @@ input {
 .message-input-area {
   background: var(--bg);
   position: relative;
+  flex-shrink: 0;
 }
 
 .input-container {
@@ -1020,43 +1042,61 @@ input {
   body {
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden;
-    touch-action: pan-y; /* Enable vertical scrolling */
-    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
-    position: relative; /* Ensure proper positioning context */
+    height: 100%;
+    height: 100dvh; /* Dynamic viewport height */
+    overflow: hidden;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overscroll-behavior: none;
   }
 
   .app-container {
     width: 100%;
     max-width: 100%;
+    height: 100%;
+    height: 100dvh;
     padding: 0;
     margin: 0;
-    overflow-x: hidden;
-    touch-action: pan-y; /* Enable vertical scrolling */
-    pointer-events: auto; /* Ensure touch events work */
-    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    overflow: hidden;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overscroll-behavior: none;
   }
 
   .main-layout {
-    position: relative;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     width: 100%;
     max-width: 100%;
-    overflow-x: hidden;
-    touch-action: pan-y; /* Enable vertical scrolling */
-    pointer-events: auto; /* Ensure touch events work */
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   .chat-panel {
     width: 100% !important;
     min-width: 100% !important;
-    height: 100vh;
-    position: absolute;
+    height: 100%;
+    height: 100dvh;
+    position: fixed;
     top: 0;
     left: 0;
+    right: 0;
+    bottom: 0;
     z-index: 2;
     transition: transform 0.3s ease-in-out;
-    touch-action: pan-y; /* Enable vertical scrolling */
-    pointer-events: auto; /* Ensure touch events work */
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   .chat-panel.mobile-hidden {
@@ -1066,13 +1106,17 @@ input {
 
   .chat-interface {
     width: 100%;
-    height: 100vh;
+    height: 100%;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
-    position: relative;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     overflow: hidden;
-    touch-action: pan-y; /* Enable vertical scrolling */
-    pointer-events: auto; /* Ensure touch events work */
+    overscroll-behavior: none;
   }
 
   .chat-header {
@@ -1089,6 +1133,7 @@ input {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     padding: 0.75rem 1rem;
     min-height: 60px;
+    touch-action: none; /* Prevent scrolling from header */
   }
 
   .chat-header .contact-info {
@@ -1104,6 +1149,7 @@ input {
     background: var(--bg);
     border-bottom: 1px solid var(--border);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    touch-action: none; /* Prevent scrolling from tabs */
   }
 
   .scheduled-call-banner {
@@ -1118,22 +1164,26 @@ input {
 
   .chat-area {
     width: 100%;
-    flex: 1;
+    position: fixed;
+    top: 110px; /* chat-header (~60px) + nav-tabs (~50px) */
+    left: 0;
+    right: 0;
+    bottom: 70px; /* message-input-area height */
     overflow-y: auto;
     overflow-x: hidden;
     padding: 1rem;
-    margin-top: 110px; /* chat-header (~60px) + nav-tabs (~50px) */
-    margin-bottom: 0;
-    padding-bottom: 60px; /* message-input-area height + extra padding */
+    padding-bottom: 1rem;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none; /* Firefox */
-    touch-action: pan-y; /* Enable vertical scrolling on mobile */
+    touch-action: pan-y; /* Only allow vertical scrolling in chat area */
     pointer-events: auto; /* Ensure touch events work */
+    overscroll-behavior: contain; /* Prevent scroll chaining to body */
+    background: var(--bg);
   }
 
   /* Adjust chat area margin when banner is present */
   .chat-area.has-banner {
-    margin-top: 160px; /* chat-header + nav-tabs + banner (~60px) - adjusted for banner moved up by 10px */
+    top: 160px; /* chat-header + nav-tabs + banner (~60px) */
   }
 
   .chat-area::-webkit-scrollbar {
@@ -1156,9 +1206,38 @@ input {
       0
     ); /* For devices with notch/home indicator */
     max-height: 200px; /* Prevent input area from taking too much space */
-    overflow-y: auto;
-    touch-action: pan-y; /* Enable vertical scrolling */
-    pointer-events: auto; /* Ensure touch events work */
+    overflow: visible;
+    overscroll-behavior: none;
+    touch-action: none; /* Prevent scrolling from input area */
+  }
+
+  /* Prevent zoom on input focus (iOS) which can cause scroll issues */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+
+  .message-input {
+    font-size: 16px !important;
+  }
+
+  /* iOS-specific fixes */
+  @supports (-webkit-touch-callout: none) {
+    /* iOS only */
+    .chat-interface {
+      min-height: -webkit-fill-available;
+    }
+
+    .chat-area {
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
+
+    .message-input-area {
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
   }
 
   /* Ensure full-width chat panel works correctly on mobile */

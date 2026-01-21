@@ -137,6 +137,10 @@ export default function FPChatInterface({
   const [showDemoMenu, setShowDemoMenu] = useState<boolean>(false);
   const [_selectedMedia, setSelectedMedia] = useState<File | null>(null);
   const [showCameraCapture, setShowCameraCapture] = useState<boolean>(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState<
+    "user" | "environment"
+  >("environment");
+  const [hasMultipleCameras, setHasMultipleCameras] = useState<boolean>(false);
   const [cursor, setCursor] = useState<string | number | null>(null);
   const [isFetchingHistory, setIsFetchingHistory] = useState<boolean>(false);
   const [hasMore, setHasMore] = useState<boolean>(true);
@@ -184,6 +188,142 @@ export default function FPChatInterface({
   });
   const isLoadingHistoryRef = useRef<boolean>(false);
   const skipAutoScrollRef = useRef<boolean>(false);
+
+  // Handle mobile virtual keyboard - keep header and input visible
+  useEffect(() => {
+    // Detect iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+    const adjustLayoutForKeyboard = () => {
+      const chatArea = chatAreaRef.current;
+      const inputArea = document.querySelector(
+        ".message-input-area"
+      ) as HTMLElement;
+
+      // Header height + tabs height
+      const headerHeight = 110;
+      // Input area height
+      const inputHeight = 70;
+
+      if (window.visualViewport) {
+        const viewportHeight = window.visualViewport.height;
+        const viewportOffsetTop = window.visualViewport.offsetTop || 0;
+        const keyboardHeight =
+          window.innerHeight - viewportHeight - viewportOffsetTop;
+
+        // Only adjust if keyboard is likely open (significant height difference)
+        if (keyboardHeight > 100) {
+          // Calculate available height for chat area
+          const availableHeight = viewportHeight - headerHeight - inputHeight;
+
+          if (chatArea) {
+            chatArea.style.position = "fixed";
+            chatArea.style.top = `${headerHeight}px`;
+            chatArea.style.bottom = "auto";
+            chatArea.style.height = `${Math.max(availableHeight, 150)}px`;
+            chatArea.style.overflow = "auto";
+          }
+
+          if (inputArea) {
+            // On iOS, position input at the visual viewport bottom
+            if (isIOS) {
+              inputArea.style.position = "fixed";
+              inputArea.style.bottom = "auto";
+              inputArea.style.top = `${
+                viewportHeight + viewportOffsetTop - inputHeight
+              }px`;
+            } else {
+              inputArea.style.position = "fixed";
+              inputArea.style.bottom = `${keyboardHeight}px`;
+              inputArea.style.top = "auto";
+            }
+          }
+        } else {
+          // Keyboard is closed - reset to normal
+          resetLayout();
+        }
+      }
+    };
+
+    const resetLayout = () => {
+      const chatArea = chatAreaRef.current;
+      const inputArea = document.querySelector(
+        ".message-input-area"
+      ) as HTMLElement;
+
+      if (chatArea) {
+        chatArea.style.position = "";
+        chatArea.style.top = "";
+        chatArea.style.bottom = "";
+        chatArea.style.height = "";
+        chatArea.style.overflow = "";
+      }
+
+      if (inputArea) {
+        inputArea.style.position = "";
+        inputArea.style.bottom = "";
+        inputArea.style.top = "";
+      }
+    };
+
+    // Prevent body scroll - only allow scroll in chat area
+    const preventBodyScroll = (e: TouchEvent) => {
+      const target = e.target as HTMLElement;
+      const chatArea = chatAreaRef.current;
+
+      // Allow scrolling only if touch is within chat area
+      if (chatArea && chatArea.contains(target)) {
+        return; // Allow scroll in chat area
+      }
+
+      // Prevent scroll everywhere else
+      e.preventDefault();
+    };
+
+    // Add touch event listener to prevent body scroll
+    document.body.addEventListener("touchmove", preventBodyScroll, {
+      passive: false,
+    });
+
+    // Listen for visual viewport changes
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", adjustLayoutForKeyboard);
+      window.visualViewport.addEventListener("scroll", adjustLayoutForKeyboard);
+    }
+
+    // For iOS, also listen for focus events as fallback
+    const handleFocus = () => {
+      if (isIOS) {
+        setTimeout(adjustLayoutForKeyboard, 300);
+      }
+    };
+
+    const handleBlur = () => {
+      if (isIOS) {
+        setTimeout(resetLayout, 100);
+      }
+    };
+
+    document.addEventListener("focusin", handleFocus);
+    document.addEventListener("focusout", handleBlur);
+
+    return () => {
+      document.body.removeEventListener("touchmove", preventBodyScroll);
+      document.removeEventListener("focusin", handleFocus);
+      document.removeEventListener("focusout", handleBlur);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener(
+          "resize",
+          adjustLayoutForKeyboard
+        );
+        window.visualViewport.removeEventListener(
+          "scroll",
+          adjustLayoutForKeyboard
+        );
+      }
+      resetLayout();
+    };
+  }, []);
 
   const toggleEmojiPicker = (): void => {
     setShowEmojiPicker((prev) => !prev);
@@ -1747,22 +1887,23 @@ export default function FPChatInterface({
     (msg) => msg.peerId === peerId
   );
 
-  // Auto-scroll when messages change
+  // Track previous message count to detect new messages
+  const prevMessageCountRef = useRef<number>(0);
+
+  // Auto-scroll when NEW messages are added (not on every render)
   useEffect(() => {
-    // 🧠 Prevent auto-scroll during history loading
+    // 🧠 Prevent auto-scroll during history loading (loading older messages)
     if (isLoadingHistoryRef.current || skipAutoScrollRef.current) return;
 
-    const chatArea = chatAreaRef.current;
-    if (!chatArea) return;
+    const currentCount = currentConversationMessages.length;
 
-    // Only scroll if the user is near the bottom
-    const isNearBottom =
-      chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight < 100;
-
-    if (isNearBottom) {
+    // Only scroll if message count increased (new message sent or received)
+    if (currentCount > prevMessageCountRef.current) {
       setTimeout(() => scrollToBottom(), 50);
     }
-  }, [currentConversationMessages]);
+
+    prevMessageCountRef.current = currentCount;
+  }, [currentConversationMessages.length]);
 
   // Reset input key when peer changes to ensure clean state
   useEffect(() => {
@@ -2145,21 +2286,43 @@ export default function FPChatInterface({
   // Cleanup effect for recording
   useEffect(() => {
     return () => {
-      // Cleanup on unmount
-      if (isRecording) {
-        shouldSendRecordingRef.current = false;
-        if (mediaRecorderRef.current) {
-          mediaRecorderRef.current.stop();
-        }
-        if (audioStreamRef.current) {
-          audioStreamRef.current.getTracks().forEach((track) => track.stop());
-        }
-        if (recordingTimerRef.current) {
-          clearInterval(recordingTimerRef.current);
-        }
+      // Cleanup on unmount - always release mic if any recording resources exist
+      shouldSendRecordingRef.current = false;
+
+      // Stop MediaRecorder first
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+
+      // Stop all tracks from MediaRecorder's stream
+      if (recorder?.stream) {
+        recorder.stream.getTracks().forEach((track) => {
+          if (track.readyState === "live") {
+            track.stop();
+          }
+        });
+      }
+
+      // Stop all tracks from our ref
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => {
+          if (track.readyState === "live") {
+            track.stop();
+          }
+        });
+        audioStreamRef.current = null;
+      }
+
+      // Clear refs
+      mediaRecorderRef.current = null;
+
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
       }
     };
-  }, [isRecording]);
+  }, []);
 
   const handleMediaSelect = (type: "photos" | "camera" | "file"): void => {
     setShowMediaPopup(false);
@@ -2289,15 +2452,35 @@ export default function FPChatInterface({
   };
 
   // Camera: start/stop and capture
-  const startCamera = async (): Promise<void> => {
+  const checkForMultipleCameras = async (): Promise<boolean> => {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) return false;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter(
+        (device) => device.kind === "videoinput"
+      );
+      return videoInputs.length > 1;
+    } catch {
+      return false;
+    }
+  };
+
+  const startCamera = async (
+    facingMode: "user" | "environment" = cameraFacingMode
+  ): Promise<void> => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         // Fallback to native file input capture if getUserMedia unavailable
         cameraInputRef.current?.click();
         return;
       }
+
+      // Check if device has multiple cameras
+      const multipleCameras = await checkForMultipleCameras();
+      setHasMultipleCameras(multipleCameras);
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: { facingMode: facingMode },
         audio: false,
       });
       mediaStreamRef.current = stream;
@@ -2311,6 +2494,19 @@ export default function FPChatInterface({
       cameraInputRef.current?.click();
       setShowCameraCapture(false);
     }
+  };
+
+  const flipCamera = async (): Promise<void> => {
+    // Stop current camera
+    stopCamera();
+
+    // Toggle facing mode
+    const newFacingMode =
+      cameraFacingMode === "environment" ? "user" : "environment";
+    setCameraFacingMode(newFacingMode);
+
+    // Start camera with new facing mode
+    await startCamera(newFacingMode);
   };
 
   const stopCamera = (): void => {
@@ -2421,12 +2617,30 @@ export default function FPChatInterface({
         return;
       }
 
+      // Prevent starting if already recording or stopped (waiting to send)
+      if (isRecording || isRecordingStopped) {
+        return;
+      }
+
+      // Prevent starting if we already have a stream (double-click protection)
+      if (audioStreamRef.current || mediaRecorderRef.current) {
+        return;
+      }
+
       if (!navigator.mediaDevices?.getUserMedia) {
         alert("Audio recording is not supported in your browser");
         return;
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Double-check we didn't start recording while waiting for getUserMedia
+      if (audioStreamRef.current || mediaRecorderRef.current) {
+        // Another recording started, stop this new stream
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
       audioStreamRef.current = stream;
 
       const mediaRecorder = new MediaRecorder(stream, {
@@ -2447,11 +2661,26 @@ export default function FPChatInterface({
       };
 
       mediaRecorder.onstop = async () => {
-        // Stop all tracks first
-        if (audioStreamRef.current) {
-          audioStreamRef.current.getTracks().forEach((track) => track.stop());
-          audioStreamRef.current = null;
+        // Ensure all tracks are stopped (backup in case stopAudioRecording didn't complete)
+        try {
+          if (mediaRecorder.stream) {
+            mediaRecorder.stream.getTracks().forEach((track) => {
+              if (track.readyState === "live") {
+                track.stop();
+              }
+            });
+          }
+          if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach((track) => {
+              if (track.readyState === "live") {
+                track.stop();
+              }
+            });
+          }
+        } catch (e) {
+          console.error("Error stopping tracks in onstop:", e);
         }
+        audioStreamRef.current = null;
 
         // Calculate actual duration from start time (more accurate than state)
         const actualDuration = recordingStartTimeRef.current
@@ -2529,32 +2758,88 @@ export default function FPChatInterface({
     }
   };
 
-  const stopAudioRecording = (): void => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+  // Helper function to release microphone - always releases regardless of state
+  const releaseMicrophone = (): void => {
+    // Get reference to the stream before clearing anything
+    const streamFromRecorder = mediaRecorderRef.current?.stream;
+    const streamFromRef = audioStreamRef.current;
+
+    // Stop tracks from MediaRecorder's stream
+    if (streamFromRecorder) {
+      streamFromRecorder.getTracks().forEach((track) => {
+        if (track.readyState === "live") {
+          track.stop();
+        }
+      });
+    }
+
+    // Also stop from our ref (might be the same stream, but ensure all tracks are stopped)
+    if (streamFromRef) {
+      streamFromRef.getTracks().forEach((track) => {
+        if (track.readyState === "live") {
+          track.stop();
+        }
+      });
+    }
+
+    // Clear the refs
+    audioStreamRef.current = null;
+
+    // Clear the timer
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
     }
   };
 
+  const stopAudioRecording = (): void => {
+    // First stop the media recorder if it exists and is recording
+    // This ensures we capture all audio data before releasing the stream
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    }
+
+    // Then release the microphone
+    releaseMicrophone();
+
+    // Clear the MediaRecorder reference
+    mediaRecorderRef.current = null;
+  };
+
   const cancelAudioRecording = (): void => {
-    if (mediaRecorderRef.current && isRecording) {
-      // Set flag to prevent storing the blob
-      shouldSendRecordingRef.current = false;
-      // Clear chunks without sending
-      audioChunksRef.current = [];
-      // Stop the recorder (this will trigger onstop but won't store due to flag)
-      mediaRecorderRef.current.stop();
-    } else if (isRecordingStopped) {
-      // Cancel from stopped state - clear everything
+    // Set flag to prevent storing the blob
+    shouldSendRecordingRef.current = false;
+    // Clear chunks without sending
+    audioChunksRef.current = [];
+
+    // First stop the media recorder if it exists and is recording
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    }
+
+    // Then release the microphone
+    releaseMicrophone();
+
+    // Clear the MediaRecorder reference
+    mediaRecorderRef.current = null;
+
+    // If in stopped state, also clear that
+    if (isRecordingStopped) {
       setIsRecordingStopped(false);
       setRecordingDuration(0);
       setStoppedRecordingDuration(0);
       stoppedAudioBlobRef.current = null;
-      audioChunksRef.current = [];
     }
   };
 
   const sendStoppedRecording = async (): Promise<void> => {
     if (stoppedAudioBlobRef.current && isRecordingStopped) {
+      // Ensure microphone is fully released before sending
+      releaseMicrophone();
+      mediaRecorderRef.current = null;
+
       await handleSendAudio(
         stoppedAudioBlobRef.current,
         stoppedRecordingDuration
@@ -2633,12 +2918,14 @@ export default function FPChatInterface({
         duration: durationToUse, // Duration in seconds (will be converted to ms in App.jsx)
       };
 
-      // Set message and send
-      setMessage(JSON.stringify(payload));
+      // Send directly without going through draft attachment preview
+      isSendingRef.current = true;
+      onSend(JSON.stringify(payload));
 
-      // Send after a brief delay to ensure state is set
+      // Reset the sending flag and scroll to bottom
       setTimeout(() => {
-        handleSendMessage();
+        isSendingRef.current = false;
+        scrollToBottom();
       }, 100);
     } catch (error) {
       console.error("Error uploading audio:", error);
@@ -3813,7 +4100,7 @@ export default function FPChatInterface({
         onScheduleClick={handleScheduleClick}
         onProfileClick={() => setShowProfileModal(true)}
       />
-      {isBannerVisible && (
+      {isBannerVisible && !imageViewerUrl && !videoPlayerUrl && (
         <FPScheduledCallBanner
           scheduledCall={scheduledCall!}
           scheduledCallFromApi={scheduledCallFromApi}
@@ -3880,61 +4167,63 @@ export default function FPChatInterface({
         />
       </div>
 
-      {/* Message Input */}
-      <div className="message-input-area">
-        {uploadProgress !== null && (
-          <div
-            style={{
-              width: "100%",
-              background: "#e5e7eb",
-              borderRadius: 4,
-              overflow: "hidden",
-              marginBottom: 8,
-              height: 8,
-            }}
-          >
+      {/* Message Input - Hidden when viewing image or video */}
+      {!imageViewerUrl && !videoPlayerUrl && (
+        <div className="message-input-area">
+          {uploadProgress !== null && (
             <div
               style={{
-                width: `${uploadProgress}%`,
-                height: "100%",
-                background: "#2563eb",
-                transition: "width 0.3s ease",
+                width: "100%",
+                background: "#e5e7eb",
+                borderRadius: 4,
+                overflow: "hidden",
+                marginBottom: 8,
+                height: 8,
               }}
-            />
-          </div>
-        )}
+            >
+              <div
+                style={{
+                  width: `${uploadProgress}%`,
+                  height: "100%",
+                  background: "#2563eb",
+                  transition: "width 0.3s ease",
+                }}
+              />
+            </div>
+          )}
 
-        <FPDraftAttachmentPreview
-          draftAttachment={draftAttachment}
-          onRemove={clearDraftAttachment}
-          onImageClick={openImageViewer}
-          formatDuration={formatDuration}
-          currentlyPlayingAudioRef={currentlyPlayingAudioRef}
-        />
+          <FPDraftAttachmentPreview
+            draftAttachment={draftAttachment}
+            onRemove={clearDraftAttachment}
+            onImageClick={openImageViewer}
+            formatDuration={formatDuration}
+            currentlyPlayingAudioRef={currentlyPlayingAudioRef}
+          />
 
-        <FPMessageInput
-          message={message}
-          setMessage={
-            setMessage as (msg: string | ((prev: string) => string)) => void
-          }
-          draftAttachment={draftAttachment}
-          getDraftCaption={getDraftCaption}
-          selectedContact={selectedContact}
-          isRecording={isRecording}
-          peerId={peerId || ""}
-          inputResetKey={inputResetKey}
-          onSend={handleSendMessage}
-          onKeyPress={handleKeyPress}
-          onStartAudioRecording={startAudioRecording}
-          onToggleMediaPopup={() => setShowMediaPopup(!showMediaPopup)}
-          onToggleEmojiPicker={toggleEmojiPicker}
-          showEmojiPicker={showEmojiPicker}
-          audioBtnRef={audioBtnRef as React.RefObject<HTMLButtonElement>}
-          inputRef={inputRef as React.RefObject<HTMLInputElement>}
-          buttonRef={buttonRef as React.RefObject<HTMLButtonElement>}
-          emojiPickerRef={emojiPickerRef as React.RefObject<HTMLDivElement>}
-        />
-      </div>
+          <FPMessageInput
+            message={message}
+            setMessage={
+              setMessage as (msg: string | ((prev: string) => string)) => void
+            }
+            draftAttachment={draftAttachment}
+            getDraftCaption={getDraftCaption}
+            selectedContact={selectedContact}
+            isRecording={isRecording}
+            peerId={peerId || ""}
+            inputResetKey={inputResetKey}
+            onSend={handleSendMessage}
+            onKeyPress={handleKeyPress}
+            onStartAudioRecording={startAudioRecording}
+            onToggleMediaPopup={() => setShowMediaPopup(!showMediaPopup)}
+            onToggleEmojiPicker={toggleEmojiPicker}
+            showEmojiPicker={showEmojiPicker}
+            audioBtnRef={audioBtnRef as React.RefObject<HTMLButtonElement>}
+            inputRef={inputRef as React.RefObject<HTMLInputElement>}
+            buttonRef={buttonRef as React.RefObject<HTMLButtonElement>}
+            emojiPickerRef={emojiPickerRef as React.RefObject<HTMLDivElement>}
+          />
+        </div>
+      )}
 
       {/* Media Upload Popup */}
       <FPMediaPopup
@@ -3977,6 +4266,8 @@ export default function FPChatInterface({
         videoRef={videoRef as React.RefObject<HTMLVideoElement>}
         onClose={closeCamera}
         onCapture={capturePhoto}
+        onFlipCamera={flipCamera}
+        hasMultipleCameras={hasMultipleCameras}
       />
 
       {/* Fullscreen Image Viewer */}

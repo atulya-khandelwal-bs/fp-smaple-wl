@@ -350,13 +350,7 @@ export default function FPMessageInput({
                   onStartAudioRecording();
                 }
               }}
-              onMouseDown={(e) => {
-                if (!isRecording && selectedContact) {
-                  e.preventDefault();
-                  onStartAudioRecording();
-                }
-              }}
-              title="Hold to record audio"
+              title="Click to record audio"
               style={{
                 width: "40px",
                 height: "40px",

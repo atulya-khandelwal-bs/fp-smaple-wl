@@ -38,11 +38,25 @@ export default function FPFileMessageView({
   const handleClick = (): void => {
     // Only handle click if there's a redirect URL and no fileUrl
     if (redirectUrl && !fileUrl) {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
       if (
         redirectUrl.startsWith("http://") ||
         redirectUrl.startsWith("https://")
       ) {
-        window.open(redirectUrl, "_blank", "noopener,noreferrer");
+        if (isIOS) {
+          // On iOS: Open in same tab to avoid duplicate tab issue
+          window.location.href = redirectUrl;
+        } else {
+          // On other platforms: Open in new tab without back history
+          const newWindow = window.open("about:blank", "_blank");
+          if (newWindow) {
+            newWindow.opener = null;
+            newWindow.location.replace(redirectUrl);
+          } else {
+            window.open(redirectUrl, "_blank", "noopener,noreferrer");
+          }
+        }
       } else {
         window.location.href = redirectUrl;
       }
@@ -107,24 +121,31 @@ export default function FPFileMessageView({
         cursor:
           redirectUrl && !fileUrl ? "pointer" : fileUrl ? "pointer" : "default",
       }}
-      onClick={
-        redirectUrl && !fileUrl
-          ? handleClick
-          : fileUrl
-          ? () => {
-              const link = document.createElement("a");
-              link.href = fileUrl;
-              if (fileName) {
-                link.download = fileName;
-              }
-              link.target = "_blank";
-              link.rel = "noreferrer";
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+        if (redirectUrl && !fileUrl) {
+          handleClick();
+        } else if (fileUrl) {
+          if (isIOS) {
+            // On iOS: Open in same tab to avoid duplicate tab issue
+            // User can use browser back button to return
+            window.location.href = fileUrl;
+          } else {
+            // On other platforms: Open in new tab without back history
+            const newWindow = window.open("about:blank", "_blank");
+            if (newWindow) {
+              newWindow.opener = null;
+              newWindow.location.replace(fileUrl);
+            } else {
+              window.open(fileUrl, "_blank", "noopener,noreferrer");
             }
-          : undefined
-      }
+          }
+        }
+      }}
     >
       {/* Document Icon */}
       <div
