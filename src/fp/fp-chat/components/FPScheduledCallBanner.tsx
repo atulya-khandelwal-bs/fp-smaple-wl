@@ -1,5 +1,5 @@
 import React from "react";
-import { Phone, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Message } from "../../common/types/chat";
 
 interface FPScheduledCallBannerProps {

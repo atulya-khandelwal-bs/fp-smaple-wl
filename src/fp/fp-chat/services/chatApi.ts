@@ -71,9 +71,7 @@ export interface RegisterUserResponse {
  * @param username - User ID/username to register
  * @returns Promise with boolean indicating success
  */
-export async function registerUser(
-  username: string
-): Promise<boolean> {
+export async function registerUser(username: string): Promise<boolean> {
   try {
     const response = await fetch(config.api.registerUserEndpoint, {
       method: "POST",
@@ -88,7 +86,9 @@ export async function registerUser(
       return true;
     } else {
       // User might already be registered
-      const errorData: RegisterUserResponse = await response.json().catch(() => ({}));
+      const errorData: RegisterUserResponse = await response
+        .json()
+        .catch(() => ({}));
 
       if (response.status === 400 || response.status === 409) {
         // User exists, can proceed
@@ -100,8 +100,7 @@ export async function registerUser(
       }
     }
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("Registration error:", error);
     throw new Error(`Registration failed: ${errorMessage}`);
   }
@@ -138,8 +137,7 @@ export async function generatePresignUrl(
 
     return data;
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("Presigned URL generation error:", error);
     throw new Error(`Presigned URL generation failed: ${errorMessage}`);
   }
@@ -173,8 +171,7 @@ export async function uploadFileToS3(
       },
     });
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("File upload error:", error);
     throw new Error(`File upload failed: ${errorMessage}`);
   }
@@ -212,8 +209,7 @@ export async function sendCustomMessage(
 
     return data;
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("Custom message send error:", error);
     throw new Error(`Custom message send failed: ${errorMessage}`);
   }
@@ -286,18 +282,8 @@ export async function fetchMessagesFromApi(
       has_more: data.has_more || false,
     };
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("Fetch messages error:", error);
     throw new Error(`Fetch messages failed: ${errorMessage}`);
   }
 }
-
-
-
-
-
-
-
-
-

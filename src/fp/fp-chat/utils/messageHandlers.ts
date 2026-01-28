@@ -29,14 +29,12 @@ interface MessageHandlersOptions {
     description: string;
   }) => void;
   clientRef: React.RefObject<unknown> | (() => unknown) | { current?: unknown };
+  registerUser?: (username: string) => Promise<boolean>;
 }
 
 /**
  * Format date as "11 Aug 10:00 am" (no seconds, with AM/PM)
  */
-// Recorder UID constant - ignore all messages from this user
-const RECORDER_ID = "999999999";
-
 export function formatScheduledDate(date: Date): string {
   const day = date.getDate();
   const monthNames = [
@@ -76,6 +74,7 @@ export function createMessageHandlers({
   handleIncomingCall,
   onPresenceStatus,
   clientRef,
+  registerUser,
 }: MessageHandlersOptions): {
   onConnected: () => void;
   onDisconnected: () => void;
@@ -298,7 +297,6 @@ export function createMessageHandlers({
             ? fromId.replace("user_", "")
             : fromId;
 
-
           setConversations((prev) => {
             // Find conversation by matching either format
             const existing = prev.find(
@@ -308,7 +306,6 @@ export function createMessageHandlers({
                 c.id === normalizedFromIdWithoutPrefix ||
                 c.id === `user_${normalizedFromIdWithoutPrefix}`
             );
-
 
             if (existing) {
               // Use the existing conversation ID format
@@ -717,7 +714,6 @@ export function createMessageHandlers({
             Object.keys(paramsData).length === 0)
         ) {
           if (msg.ext && typeof msg.ext === "object") {
-
             // Check if ext has the attachment properties directly (we spread them)
             if (
               msg.ext.type &&
@@ -789,8 +785,7 @@ export function createMessageHandlers({
               } else {
                 paramsData = bodyData;
               }
-            } catch (parseError) {
-            }
+            } catch (parseError) {}
           }
 
           // Last resort: try msg.msg if it exists
@@ -816,11 +811,9 @@ export function createMessageHandlers({
               } else {
                 paramsData = msgData;
               }
-            } catch (parseError) {
-            }
+            } catch (parseError) {}
           }
         }
-
 
         // Normalize the message structure for UI parsing
         let normalizedData = paramsData;
@@ -1114,9 +1107,57 @@ export function createMessageHandlers({
         setIsLoggingIn(false);
       }
     },
-    onError: (e: { message: string }): void => {
-      addLog(`Error: ${e.message}`);
-      setIsLoggingIn(false);
+    onError: async (e: { message: string; code?: string; type?: string }): Promise<void> => {
+      const errorMessage = e.message || "";
+      const errorCode = e.code || e.type || "";
+      
+      // Check if it's a usernotfound error (case insensitive)
+      const isUserNotFound = 
+        errorMessage.toLowerCase().includes("usernotfound") ||
+        errorMessage.toLowerCase().includes("user not found") ||
+        errorMessage.toLowerCase().includes("user_not_found") ||
+        errorCode.toLowerCase() === "usernotfound" ||
+        errorCode === "404";
+
+      if (isUserNotFound && registerUser && userId) {
+        // Step 3: User not found - register the user
+        addLog(`User not found in Agora Chat. Registering user ${userId}...`);
+        
+        try {
+          await registerUser(userId);
+          addLog(`User ${userId} registered successfully. Retrying login...`);
+          
+          // Step 4: Retry login after registration
+          const client = getClientRef() as {
+            open?: (options: {
+              user: string;
+              accessToken: string;
+            }) => Promise<void> | void;
+          } | null;
+          
+          if (client && typeof client.open === "function" && generateNewToken) {
+            // Generate a new token and retry login
+            const newToken = await generateNewToken();
+            if (newToken) {
+              const retryPromise = client.open({ user: userId, accessToken: newToken });
+              if (retryPromise && typeof retryPromise.then === "function") {
+                await retryPromise;
+              }
+            }
+          }
+        } catch (registerError) {
+          const registerErrorMessage = registerError instanceof Error 
+            ? registerError.message 
+            : String(registerError);
+          addLog(`Registration failed: ${registerErrorMessage}`);
+          console.error("Registration error:", registerError);
+          setIsLoggingIn(false);
+        }
+      } else {
+        // Other errors - normal error handling
+        addLog(`Error: ${errorMessage}`);
+        setIsLoggingIn(false);
+      }
     },
     onModifiedMessage: (msg: MessageBody): void => {
       // Handle edited messages
@@ -1125,7 +1166,6 @@ export function createMessageHandlers({
       if (isBlockedUID(fromId)) {
         return;
       }
-
 
       // Add the edited message to logs so it gets processed
       // The message will have the same mid but updated content
@@ -1148,10 +1188,12 @@ export function createMessageHandlers({
         serverMsgId: messageIdForEditing,
         mid: msgMid || msgId, // Use mid if available, fallback to id
         log: `${msg.from}: ${messageContent}`, // Use 'log' instead of 'message' to match processing logic
-        timestamp: msg.time ? new Date(msg.time) : new Date(),
+        timestamp:
+          msg.time && typeof msg.time === "number"
+            ? new Date(msg.time)
+            : new Date(),
         isEdited: true, // Mark as edited
       };
-
 
       // Add as a log entry with serverMsgId and mid to identify it as an edited message
       // Use 'log' property to match the format expected by the message processing logic

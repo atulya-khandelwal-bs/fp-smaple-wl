@@ -349,6 +349,24 @@ function FPChatApp({
     setIncomingCall(callData);
   };
 
+  // Helper function to register user (for usernotfound error handling)
+  const registerUser = async (username: string): Promise<boolean> => {
+    try {
+      await registerUserApi(username);
+      return true;
+    } catch (registerError) {
+      const errorMessage =
+        registerError instanceof Error
+          ? registerError.message
+          : String(registerError);
+      // Check if it's a "user already exists" scenario - we can proceed
+      if (errorMessage.includes("400") || errorMessage.includes("409")) {
+        return true;
+      }
+      throw registerError;
+    }
+  };
+
   // Create handlers - they will use clientRefForHandlers.current
   const handlers = createMessageHandlers({
     userId,
@@ -358,6 +376,7 @@ function FPChatApp({
     setConversations: () => {}, // Not used - conversation list removed
     generateNewToken,
     handleIncomingCall,
+    registerUser,
     get clientRef() {
       return clientRefForHandlers;
     },
@@ -371,9 +390,12 @@ function FPChatApp({
   }, [clientRef]);
 
   // Auto-login when userId and token are provided
+  // Flow: 1. Generate Token (done in initializeDirectChat), 2. Login Into Agora SDK
+  // If usernotfound error occurs, onError handler will: 3. Call register API, 4. Retry login
   useEffect(() => {
     if (userId && token && !isLoggedIn && clientRef.current) {
-      // Automatically login with the provided token
+      // Step 2: Login Into Agora SDK
+      // Errors (including usernotfound) will be handled by onError handler
       if (
         typeof (
           clientRef.current as unknown as {
@@ -431,9 +453,6 @@ function FPChatApp({
             return;
           }
         }
-
-        // Register the user if not already registered
-        await registerUser(contact.id);
 
         // Set selected contact and peerId to open chat interface
         setSelectedContact(contact);
@@ -659,28 +678,6 @@ function FPChatApp({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peerId, isLoggedIn, clientRef, logs.length]);
-
-  // Register a user with Agora (called when selecting a user)
-  const registerUser = async (username: string): Promise<boolean> => {
-    try {
-      addLog(`Registering user ${username}...`);
-      await registerUserApi(username);
-      addLog(`User ${username} registered successfully`);
-      return true;
-    } catch (registerError) {
-      const errorMessage =
-        registerError instanceof Error
-          ? registerError.message
-          : String(registerError);
-      // Check if it's a "user already exists" scenario - we can proceed
-      if (errorMessage.includes("400") || errorMessage.includes("409")) {
-        addLog(`User ${username} already exists, proceeding...`);
-        return true;
-      }
-      addLog(`Registration error: ${errorMessage}`);
-      return false;
-    }
-  };
 
   const handleLogout = (): void => {
     if (
@@ -1144,26 +1141,28 @@ function FPChatApp({
   // Show 404 error if dietitian ID is invalid
   if (show404Error) {
     return (
-      <FP404Error
-        message={`Dietitian ID "${conversationId}" not found`}
-        onRetry={async () => {
-          setShow404Error(false);
-          const isValid = await validateDietitianId();
-          if (!isValid) {
-            setShow404Error(true);
-          } else {
-            // If valid, try to fetch scheduled call again
-            await fetchScheduledCall();
-          }
-        }}
-      />
+      <div className="fp-chat-wrapper">
+        <FP404Error
+          message={`Dietitian ID "${conversationId}" not found`}
+          onRetry={async () => {
+            setShow404Error(false);
+            const isValid = await validateDietitianId();
+            if (!isValid) {
+              setShow404Error(true);
+            } else {
+              // If valid, try to fetch scheduled call again
+              await fetchScheduledCall();
+            }
+          }}
+        />
+      </div>
     );
   }
 
   // Show call interface if there's an active call
   if (activeCall) {
     return (
-      <div className="app-container">
+      <div className="fp-chat-wrapper app-container">
         <FPCallApp
           userId={activeCall.userId}
           peerId={activeCall.peerId}
@@ -1185,7 +1184,7 @@ function FPChatApp({
   const isChatConnecting = (token && !isLoggedIn) || isGeneratingToken;
 
   return (
-    <div className="app-container">
+    <div className="fp-chat-wrapper app-container">
       <div className="main-layout">
         {/* Chat Panel - always full width, no conversation list */}
         <div className="chat-panel full-width">

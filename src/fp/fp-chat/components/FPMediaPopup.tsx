@@ -1,5 +1,5 @@
 import React, { useEffect, RefObject, KeyboardEvent } from "react";
-import { X, Send, Mic, SendHorizontal } from "lucide-react";
+import { X, Mic, SendHorizontal } from "lucide-react";
 import { DraftAttachment, Contact } from "../../common/types/chat";
 
 interface FPMediaPopupProps {
@@ -107,28 +107,28 @@ export default function FPMediaPopup({
               alignItems: "center",
               gap: "12px",
               padding: "0.5rem",
-            }}
-          >
+        }}
+      >
             {/* Close (X) Button - Red Circular (same style as Plus button) */}
-            <div
-              style={{
-                display: "flex",
+        <div
+          style={{
+            display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
-              }}
-            >
-              <button
+          }}
+        >
+          <button
                 className="icon-btn close-btn"
-                onClick={onClose}
+            onClick={onClose}
                 title="Close"
-                style={{
+            style={{
                   width: "40px",
                   height: "40px",
                   borderRadius: "50%",
                   background: "#DC4144",
-                  border: "none",
-                  cursor: "pointer",
+              border: "none",
+              cursor: "pointer",
                   padding: 0,
                   display: "flex",
                   alignItems: "center",
@@ -294,9 +294,9 @@ export default function FPMediaPopup({
                         ? "pointer"
                         : "not-allowed",
                     padding: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
                     color: "#FFFFFF",
                     flexShrink: 0,
                     transition: "opacity 0.2s",
@@ -311,10 +311,10 @@ export default function FPMediaPopup({
                     if (selectedContact && !isRecording) {
                       e.currentTarget.style.opacity = "1";
                     }
-                  }}
-                >
+            }}
+          >
                   <Mic size={20} color="#FFFFFF" strokeWidth={2.5} />
-                </button>
+          </button>
               )}
             </div>
           </div>

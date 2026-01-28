@@ -1,14 +1,12 @@
 import { RefObject, useEffect, useRef, useState } from "react";
 import FPMessageBubble from "./FPMessageBubble";
 import FPSystemMessage from "./FPSystemMessage";
-import { Message, Contact } from "../../common/types/chat";
+import { Message } from "../../common/types/chat";
 import React from "react";
 
 interface FPChatTabProps {
   peerId: string;
   currentConversationMessages: Message[];
-  selectedContact: Contact | null;
-  userId: string;
   formatDateLabel: (date: Date) => string;
   formatCurrency: (amount: number) => string;
   openImageViewer: (url: string, alt?: string) => void;
@@ -22,8 +20,6 @@ interface FPChatTabProps {
 export default function FPChatTab({
   peerId,
   currentConversationMessages,
-  selectedContact,
-  userId,
   formatDateLabel,
   formatCurrency,
   openImageViewer,
@@ -306,8 +302,6 @@ export default function FPChatTab({
                 <FPMessageBubble
                   key={msg.id}
                   msg={msg}
-                  selectedContact={selectedContact}
-                  userId={userId}
                   openImageViewer={openImageViewer}
                   currentlyPlayingAudioRef={currentlyPlayingAudioRef}
                   formatCurrency={formatCurrency}

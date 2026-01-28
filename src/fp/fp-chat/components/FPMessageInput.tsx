@@ -1,5 +1,5 @@
 import React, { useEffect, RefObject, KeyboardEvent } from "react";
-import { Smile, Plus, Send, Mic, X, SendHorizonal } from "lucide-react";
+import { Plus, Mic, SendHorizonal } from "lucide-react";
 import "emoji-picker-element";
 import { DraftAttachment, Contact } from "../../common/types/chat";
 
@@ -20,7 +20,6 @@ interface FPMessageInputProps {
   showEmojiPicker: boolean;
   audioBtnRef: RefObject<HTMLButtonElement>;
   inputRef: RefObject<HTMLInputElement>;
-  buttonRef: RefObject<HTMLButtonElement>;
   emojiPickerRef: RefObject<HTMLDivElement>;
 }
 
@@ -41,7 +40,6 @@ export default function FPMessageInput({
   showEmojiPicker,
   audioBtnRef,
   inputRef,
-  buttonRef,
   emojiPickerRef,
 }: FPMessageInputProps): React.JSX.Element {
   // Handle emoji selection and make navigation bar scrollable

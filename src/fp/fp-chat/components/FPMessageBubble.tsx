@@ -7,13 +7,11 @@ import FPCallMessageView from "./messages/FPCallMessageView";
 import FPTextMessageView from "./messages/FPTextMessageView";
 import FPGeneralNotificationView from "./messages/FPGeneralNotificationView";
 import FPCallScheduledView from "./messages/FPCallScheduledView";
-import { Message, Contact } from "../../common/types/chat";
+import { Message } from "../../common/types/chat";
 import React from "react";
 
 interface FPMessageBubbleProps {
   msg: Message;
-  selectedContact: Contact | null;
-  userId: string;
   openImageViewer: (url: string, alt?: string) => void;
   currentlyPlayingAudioRef: RefObject<HTMLAudioElement | null>;
   formatCurrency: (amount: number) => string;
@@ -26,8 +24,6 @@ interface FPMessageBubbleProps {
 
 export default function FPMessageBubble({
   msg,
-  selectedContact,
-  userId,
   openImageViewer,
   currentlyPlayingAudioRef,
   formatCurrency,
@@ -375,57 +371,57 @@ export default function FPMessageBubble({
         <div className="message-content">
           {!msg.isIncoming && (
             <div className="message-time">{msg.timestamp}</div>
+        )}
+        <div
+          className="message-bubble"
+          style={{
+            position: "relative",
+          }}
+        >
+          {renderMessageContent()}
+          {isLastMessage && !msg.isIncoming && (
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              style={{
+                position: "absolute",
+                right: -8,
+                bottom: -5,
+                pointerEvents: "none",
+              }}
+            >
+              <path
+                d="M0 7.71777C0.5 11.1206 2 18 18 18C16.2251 17.2188 9 12.6373 9 0L0 7.71777Z"
+                fill="#109310"
+              />
+            </svg>
           )}
-          <div
-            className="message-bubble"
-            style={{
-              position: "relative",
-            }}
-          >
-            {renderMessageContent()}
-            {isLastMessage && !msg.isIncoming && (
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 18 18"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                style={{
-                  position: "absolute",
-                  right: -8,
-                  bottom: -5,
-                  pointerEvents: "none",
-                }}
-              >
-                <path
-                  d="M0 7.71777C0.5 11.1206 2 18 18 18C16.2251 17.2188 9 12.6373 9 0L0 7.71777Z"
-                  fill="#109310"
-                />
-              </svg>
-            )}
-            {isLastMessage && msg.isIncoming && (
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 18 18"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                style={{
-                  position: "absolute",
-                  left: -8,
-                  bottom: -5,
-                  pointerEvents: "none",
-                }}
-              >
-                <path
-                  d="M18 7.71777C17.5 11.1206 16 18 0 18C1.7749 17.2188 9 12.6373 9 0L18 7.71777Z"
-                  fill="#e5e7eb"
-                />
-              </svg>
-            )}
-          </div>
+          {isLastMessage && msg.isIncoming && (
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              style={{
+                position: "absolute",
+                left: -8,
+                bottom: -5,
+                pointerEvents: "none",
+              }}
+            >
+              <path
+                d="M18 7.71777C17.5 11.1206 16 18 0 18C1.7749 17.2188 9 12.6373 9 0L18 7.71777Z"
+                fill="#e5e7eb"
+              />
+            </svg>
+          )}
+        </div>
           {msg.isIncoming && (
-            <div className="message-time">{msg.timestamp}</div>
+        <div className="message-time">{msg.timestamp}</div>
           )}
         </div>
       </div>

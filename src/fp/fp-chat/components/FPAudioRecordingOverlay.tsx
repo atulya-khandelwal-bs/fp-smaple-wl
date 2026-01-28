@@ -1,4 +1,4 @@
-import { Send, SendHorizontal, SquareStop, Trash2 } from "lucide-react";
+import { SendHorizontal, SquareStop, Trash2 } from "lucide-react";
 import React, { useState, useEffect } from "react";
 
 interface FPAudioRecordingOverlayProps {
@@ -122,13 +122,13 @@ export default function FPAudioRecordingOverlay({
                 : Array.from({ length: 25 }).map((_, i) => (
                     <div
                       key={`bar-${i}`}
-                      style={{
+                style={{
                         width: "3px",
                         height: `${Math.random() * 20 + 4}px`,
-                        background: "#DC4144",
+                  background: "#DC4144",
                         borderRadius: "2px",
-                      }}
-                    />
+                }}
+              />
                   ))}
             </div>
           ) : (

@@ -123,7 +123,7 @@ export default function FPChatInterface({
   chatClient,
   onBackToConversations,
   onInitiateCall,
-  onScheduleClick,
+  onScheduleClick: _onScheduleClick,
   onSchedule,
   onUpdateLastMessageFromHistory,
   onMessagesLoadedFromHistory,
@@ -1757,7 +1757,6 @@ export default function FPChatInterface({
           // Update the existing message with new content and mark as edited
           // Ensure we're using the new content from the edited message
           const newContent = editedMsg.content || existingMsg.content;
-          const contentChanged = newContent !== existingMsg.content;
 
           const updatedMessage = {
             ...existingMsg,
@@ -2287,7 +2286,7 @@ export default function FPChatInterface({
   useEffect(() => {
     return () => {
       // Cleanup on unmount - always release mic if any recording resources exist
-      shouldSendRecordingRef.current = false;
+        shouldSendRecordingRef.current = false;
 
       // Stop MediaRecorder first
       const recorder = mediaRecorderRef.current;
@@ -2300,16 +2299,16 @@ export default function FPChatInterface({
         recorder.stream.getTracks().forEach((track) => {
           if (track.readyState === "live") {
             track.stop();
-          }
+        }
         });
       }
 
       // Stop all tracks from our ref
-      if (audioStreamRef.current) {
+        if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach((track) => {
           if (track.readyState === "live") {
             track.stop();
-          }
+        }
         });
         audioStreamRef.current = null;
       }
@@ -2317,8 +2316,8 @@ export default function FPChatInterface({
       // Clear refs
       mediaRecorderRef.current = null;
 
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
     };
@@ -2670,7 +2669,7 @@ export default function FPChatInterface({
               }
             });
           }
-          if (audioStreamRef.current) {
+        if (audioStreamRef.current) {
             audioStreamRef.current.getTracks().forEach((track) => {
               if (track.readyState === "live") {
                 track.stop();
@@ -2680,7 +2679,7 @@ export default function FPChatInterface({
         } catch (e) {
           console.error("Error stopping tracks in onstop:", e);
         }
-        audioStreamRef.current = null;
+          audioStreamRef.current = null;
 
         // Calculate actual duration from start time (more accurate than state)
         const actualDuration = recordingStartTimeRef.current
@@ -2809,9 +2808,9 @@ export default function FPChatInterface({
 
   const cancelAudioRecording = (): void => {
     // Set flag to prevent storing the blob
-    shouldSendRecordingRef.current = false;
-    // Clear chunks without sending
-    audioChunksRef.current = [];
+      shouldSendRecordingRef.current = false;
+      // Clear chunks without sending
+      audioChunksRef.current = [];
 
     // First stop the media recorder if it exists and is recording
     const recorder = mediaRecorderRef.current;
@@ -4157,8 +4156,6 @@ export default function FPChatInterface({
         <FPChatTab
           peerId={peerId || ""}
           currentConversationMessages={currentConversationMessages}
-          selectedContact={selectedContact}
-          userId={userId}
           formatDateLabel={formatDateLabel}
           formatCurrency={formatCurrency}
           openImageViewer={openImageViewer}
@@ -4169,60 +4166,59 @@ export default function FPChatInterface({
 
       {/* Message Input - Hidden when viewing image or video */}
       {!imageViewerUrl && !videoPlayerUrl && (
-        <div className="message-input-area">
-          {uploadProgress !== null && (
+      <div className="message-input-area">
+        {uploadProgress !== null && (
+          <div
+            style={{
+              width: "100%",
+              background: "#e5e7eb",
+              borderRadius: 4,
+              overflow: "hidden",
+              marginBottom: 8,
+              height: 8,
+            }}
+          >
             <div
               style={{
-                width: "100%",
-                background: "#e5e7eb",
-                borderRadius: 4,
-                overflow: "hidden",
-                marginBottom: 8,
-                height: 8,
+                width: `${uploadProgress}%`,
+                height: "100%",
+                background: "#2563eb",
+                transition: "width 0.3s ease",
               }}
-            >
-              <div
-                style={{
-                  width: `${uploadProgress}%`,
-                  height: "100%",
-                  background: "#2563eb",
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-          )}
+            />
+          </div>
+        )}
 
-          <FPDraftAttachmentPreview
-            draftAttachment={draftAttachment}
-            onRemove={clearDraftAttachment}
-            onImageClick={openImageViewer}
-            formatDuration={formatDuration}
-            currentlyPlayingAudioRef={currentlyPlayingAudioRef}
-          />
+        <FPDraftAttachmentPreview
+          draftAttachment={draftAttachment}
+          onRemove={clearDraftAttachment}
+          onImageClick={openImageViewer}
+          formatDuration={formatDuration}
+          currentlyPlayingAudioRef={currentlyPlayingAudioRef}
+        />
 
-          <FPMessageInput
-            message={message}
-            setMessage={
-              setMessage as (msg: string | ((prev: string) => string)) => void
-            }
-            draftAttachment={draftAttachment}
-            getDraftCaption={getDraftCaption}
-            selectedContact={selectedContact}
-            isRecording={isRecording}
-            peerId={peerId || ""}
-            inputResetKey={inputResetKey}
-            onSend={handleSendMessage}
-            onKeyPress={handleKeyPress}
-            onStartAudioRecording={startAudioRecording}
-            onToggleMediaPopup={() => setShowMediaPopup(!showMediaPopup)}
-            onToggleEmojiPicker={toggleEmojiPicker}
-            showEmojiPicker={showEmojiPicker}
-            audioBtnRef={audioBtnRef as React.RefObject<HTMLButtonElement>}
-            inputRef={inputRef as React.RefObject<HTMLInputElement>}
-            buttonRef={buttonRef as React.RefObject<HTMLButtonElement>}
-            emojiPickerRef={emojiPickerRef as React.RefObject<HTMLDivElement>}
-          />
-        </div>
+        <FPMessageInput
+          message={message}
+          setMessage={
+            setMessage as (msg: string | ((prev: string) => string)) => void
+          }
+          draftAttachment={draftAttachment}
+          getDraftCaption={getDraftCaption}
+          selectedContact={selectedContact}
+          isRecording={isRecording}
+          peerId={peerId || ""}
+          inputResetKey={inputResetKey}
+          onSend={handleSendMessage}
+          onKeyPress={handleKeyPress}
+          onStartAudioRecording={startAudioRecording}
+          onToggleMediaPopup={() => setShowMediaPopup(!showMediaPopup)}
+          onToggleEmojiPicker={toggleEmojiPicker}
+          showEmojiPicker={showEmojiPicker}
+          audioBtnRef={audioBtnRef as React.RefObject<HTMLButtonElement>}
+          inputRef={inputRef as React.RefObject<HTMLInputElement>}
+          emojiPickerRef={emojiPickerRef as React.RefObject<HTMLDivElement>}
+        />
+      </div>
       )}
 
       {/* Media Upload Popup */}

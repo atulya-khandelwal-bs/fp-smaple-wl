@@ -45,12 +45,12 @@ export default function FPCameraCaptureOverlay({
       >
         {/* Video container with flip button */}
         <div style={{ position: "relative" }}>
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            style={{ width: "100%", borderRadius: 8, background: "black" }}
-          />
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          style={{ width: "100%", borderRadius: 8, background: "black" }}
+        />
           {/* Flip Camera Button - only shown when multiple cameras available */}
           {hasMultipleCameras && onFlipCamera && (
             <button
